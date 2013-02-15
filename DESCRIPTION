@@ -1,0 +1,16 @@
+Package: BEClonalEvolutionNSAID
+Type: Package
+Title: NSAIDs modulate clonal evolution in Barrett's esophagus
+Version: 1.0.0
+Date: 2013-02-07
+Author: Rumen Kostadinov <rkostadi@jhsph.edu>
+Maintainer: Rumen Kostadinov <rkostadi@jhsph.edu>
+Description: R package accompanying "NSAIDs modulation clonal evolution in Barrett's esophagus" study by Kostadinov et al
+License: Artistic-2.0
+Depends: R (>= 2.12.0)
+Imports: 
+Enhances: 
+Suggests:
+LazyLoad: yes
+biocViews: 
+Packaged: 

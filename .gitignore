@@ -1,0 +1,12 @@
+## Ignore all files in bin/
+bin/
+inst/extdata/
+## Ignore previous text-based versions of files
+*~
+*/*~
+*/*/*~
+## Ignore Latex additional files
+*.aux
+*.dvi
+## R-related
+.Rhistory

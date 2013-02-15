@@ -1,4 +1,4 @@
-barretts-clonal-evolution-nsaids
-================================
+peaced
+======
 
-R package accompanying "NSAIDs modulation clonal evolution in Barrett's esophagus" study by Kostadinov et al
+Pipeline for Evolutionary Analysis of Cancer Epi/genomics Data
