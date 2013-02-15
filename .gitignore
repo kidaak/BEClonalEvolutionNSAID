@@ -3,8 +3,6 @@ bin/
 inst/extdata/
 ## Ignore previous text-based versions of files
 *~
-*/*~
-*/*/*~
 ## Ignore Latex additional files
 *.aux
 *.dvi
