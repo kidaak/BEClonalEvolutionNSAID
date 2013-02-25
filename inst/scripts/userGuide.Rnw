@@ -1,0 +1,63 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath,pstricks}
+\usepackage[authoryear,round]{natbib}
+\usepackage{hyperref}
+\usepackage{Sweave}
+
+\SweaveOpts{eps=FALSE,prefix.string=figures/userGuide,eps=FALSE,pdf=TRUE}
+
+\textwidth=6.2in
+\textheight=8.5in
+%\parskip=.3cm
+\oddsidemargin=.1in
+\evensidemargin=.1in
+\headheight=-.3in
+
+\newcommand{\scscst}{\scriptscriptstyle}
+\newcommand{\scst}{\scriptstyle}
+
+
+\newcommand{\Rfunction}[1]{{\texttt{#1}}}
+\newcommand{\Robject}[1]{{\texttt{#1}}}
+\newcommand{\Rpackage}[1]{{\textit{#1}}}
+\newcommand{\Rmethod}[1]{{\texttt{#1}}}
+\newcommand{\Rfunarg}[1]{{\texttt{#1}}}
+\newcommand{\Rclass}[1]{{\textit{#1}}}
+
+\textwidth=6.2in
+
+\bibliographystyle{plainnat}
+
+\begin{document}
+%\setkeys{Gin}{width=0.55\textwidth}
+
+\title{``NSAIDs modulate clonal evolution in Barrett's esophagus'' \\Using \Rpackage{BEClonalEvolutionNSAID} for reproducing results}
+\author{Rumen Kostadinov}
+\maketitle
+
+\section{Getting started}
+
+<<echo=TRUE, results=hide, eval=FALSE>>=
+source("http://www.bioconductor.org/biocLite.R")
+biocLite(c("cryptsim"))
+@
+
+
+\section{Reading in data}
+
+<<echo=FALSE, results=hide, eval=TRUE>>=
+options(width=70)
+@
+
+
+\section{System information}
+
+This analysis was carried out on a linux machine with 12GB of RAM
+using the following packages:
+
+<<session>>=
+sessionInfo()
+@
+
+\end{document}
