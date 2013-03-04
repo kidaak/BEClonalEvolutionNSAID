@@ -8,7 +8,7 @@ all: inst test
 inst: # Install package
 
 	cd ${TOP}/..;\
-	R CMD INSTALL --no-lock ${PKG}
+	R CMD INSTALL ${PKG} --library=R/i686-pc-linux-gnu-library/2.12
 
 test: # Run unit tests
 	export RCMDCHECK=FALSE;\

@@ -144,7 +144,7 @@ segmentSamplesOfPatient <- function(con, patientID, filterSNP=TRUE){
     sample_id = samples[i,"sample_id"]
     reference_id = samples[i,"reference_id"]
 
-    segment(con=con, sample_id, reference_id)
+    segment(con=con, sample_id, reference_id, filterSNP=filterSNP)
     
   } 
 }
@@ -161,14 +161,30 @@ segmentTechnicalReplicates <- function(con){
   bld.437.1 = 168
   bld.437.2 = 332
 
-  segment(con=con, bld.662.1, bld.662.2)
-  segment(con=con, bld.437.1, bld.437.2)
+  segment(con=con, bld.662.2, bld.662.1, filterSNP=TRUE)
+  segment(con=con, bld.437.1, bld.437.2, filterSNP=TRUE)
+
+
+}
+
+callStatesTechnicalReplicates <- function(con){
+  ## Patient 662, 2 blood samples
+  bld.662.1 = 258
+  bld.662.2 = 261
+  
+  ## Patient 437
+  bld.437.1 = 168
+  bld.437.2 = 332
+
+  callSingleSampleFeatureStates(con=con, bld.662.2, bld.662.1, patient_id=662)
+  callSingleSampleFeatureStates(con=con, bld.437.1, bld.437.2, patient_id=437)
 }
 
 
-segment <- function(con, sampleID, referenceID){
 
-
+segment <- function(con, sample_id, reference_id, filterSNP=TRUE){
+  require("GLAD")
+  
   ## ###############
   ## Constants
   ## ###############
@@ -183,7 +199,7 @@ segment <- function(con, sampleID, referenceID){
   CORFACTOR = 0.53
   
   ##MIN_REQUIRED_HET_DENSITY = 1/20000 ## One het SNP every 10 kb
-  MIN_REQUIRED_HET_SNPS = 15 ## At least 5 SNPs confirm an LOH event
+
   
   ## #################
   ## This has to be a pass-by-reference code 
@@ -499,6 +515,165 @@ segment <- function(con, sampleID, referenceID){
   ## Save to sbepdb
   rs = dbGetQuery(con, paste("delete from sample_features where sample_id=",sample_id,"and reference_id=",reference_id))
   dbWriteTable(con, "sample_features", sample_features, row.names=F, append=TRUE)
+}
+
+
+
+## #################################
+## Single sample feature state calling
+## #################################
+callSingleSampleFeatureStates = function(con, sample_id, reference_id, patient_id){
+
+  MIN_REQUIRED_HET_SNPS = 15 ## At least 5 SNPs confirm an LOH event
+
+  ## Load chr, start SNP, stop SNP annotation
+  snps_annotation = dbGetQuery(con, "select * from snps_annotation")
+  ## Fix X=23 Y=24
+  snps_annotation[23,1]=23
+  snps_annotation[24,1]=24
+
+  ## Get snps
+  snps = dbGetQuery(con, "select chromosome, position, snp_id from snps order by chromosome, position")
+  snps = filterUnmappedSNPs(snps)
+  
+  ## Get state calling thresholds
+  sthres = dbGetQuery(con, "select * from state_calling_thresholds")
+  
+  ## Assign molecular states to features
+  ## Cartesian product of states and features:
+  features = dbGetQuery(con, paste("select * from sample_features where sample_id=",
+    sample_id,"and reference_id=",reference_id)) 
+  sf = expand.grid(sthres[,"state_id"],features[,"feature_id"])
+  fs.het.logr = match.conditions(features[,"het_logr"],sthres[,"het_logr_lower"],sthres[,"het_logr_upper"])
+  fs.hom.logr = match.conditions(features[,"hom_logr"],sthres[,"hom_logr_lower"],sthres[,"hom_logr_upper"])
+  fs.mbaf     = match.conditions(features[,"mbaf"],    sthres[,"mbaf_lower"],sthres[,"mbaf_upper"])
+  sid = features[match(sf[,2],features$feature_id),"sample_id"]
+  rid = features[match(sf[,2],features$feature_id),"reference_id"]
+  fsp = cbind(sid,rid,sf[,2],sf[,1],sthres[sf[,1],"state"],fs.het.logr,fs.hom.logr,fs.mbaf)
+  colnames(fsp) = c("sample_id","reference_id","feature_id","state_id","state",
+            "het_logr_prob","hom_logr_prob","mbaf_prob")
+  fsp = as.data.frame(fsp)    
+  rs = dbGetQuery(con, paste("delete from feature_state_probabilities where sample_id=",sample_id,"and reference_id=",reference_id))
+  dbWriteTable(con, "feature_state_probabilities", fsp, row.names=F, append=T)
+  
+
+  breakpoints = NULL
+  d=dbGetQuery(con,paste("select * from feature_state_probabilities f inner join sample_features s
+                          on s.feature_id=f.feature_id
+                          where s.sample_id=",sample_id," and s.reference_id=",reference_id))
+
+  state_AA = d[d$state_id==3 & (d$het_logr_prob==1 | d$hom_logr_prob==1) & d$mbaf_prob==1 &
+    d$num_het_snps > MIN_REQUIRED_HET_SNPS, "feature_id"]
+  
+  state_gain = d[d$state_id%in%c(4,5,7,8) & ( d$het_logr_prob==1 | d$hom_logr_prob==1 )& d$mbaf_prob==1,"feature_id"]
+  state_A = d[d$state_id==2 & (d$hom_logr_prob==1 | d$het_logr_prob==1) & d$mbaf_prob==1, "feature_id"]
+
+  state_0 = d[d$state_id==1 & d$het_logr_prob==1 & d$hom_logr_prob==1 & d$mbaf_prob==1, "feature_id"]
+  state_0_mixed = d[d$state_id==2 & d$het_logr < -1 & d$hom_logr < -1, "feature_id"]
+  
+  orig.feats = sort(unique(d$feature_id))
+  feats = rep("AB",length(orig.feats)) 
+  feats[match(state_AA,orig.feats)] = "AA"
+  feats[match(state_gain,orig.feats)] = "AAB"
+  feats[match(state_A,orig.feats)] = "A"
+  feats[match(state_0,orig.feats)] = "0"
+  feats[match(state_0_mixed,orig.feats)] = "0"
+  
+  ## Gather all breakpoints
+  breakpoints = sort(unique(c(breakpoints,d[,"start_snp_id"],d[,"stop_snp_id"])))
+
+  ## Mind the snps_annotation!
+  all.bins = NULL
+  for(chr in 1:24){
+    bins.chr = NULL
+    ## run p arm, should handle acrocentric chromosomes
+    if(snps_annotation[chr,"start"]!=snps_annotation[chr,"p"]){
+      bins.p.arm = cbind(c(snps_annotation[chr,"start"],
+        breakpoints[breakpoints>snps_annotation[chr,"start"] & breakpoints<snps_annotation[chr,"p"]]),
+        c(breakpoints[breakpoints>snps_annotation[chr,"start"] & breakpoints<snps_annotation[chr,"p"]],
+          snps_annotation[chr,"p"]))
+    } else {
+      bins.p.arm = NULL
+    }
+    ## run q arm
+    bins.q.arm = cbind(c(snps_annotation[chr,"q"],
+      breakpoints[breakpoints>snps_annotation[chr,"q"] & breakpoints<snps_annotation[chr,"stop"]]),
+      c(breakpoints[breakpoints>snps_annotation[chr,"q"] & breakpoints<snps_annotation[chr,"stop"]],
+        snps_annotation[chr,"stop"]))
+    bins.chr = rbind(bins.p.arm,bins.q.arm)
+    if(nrow(bins.chr)>0){
+      bins.chr = cbind(rep(chr, nrow(bins.chr)),bins.chr)
+    }
+    all.bins = rbind(all.bins, bins.chr)
+  }
+  colnames(all.bins) = c("chromosome","start_snp_id","stop_snp_id")
+  all.bins = as.data.frame(all.bins)
+
+
+
+  d=dbGetQuery(con,paste("select * from feature_state_probabilities f inner join sample_features s
+                          on s.feature_id=f.feature_id
+                          where s.sample_id=",sample_id," and s.reference_id=",reference_id))
+  state_AA = d[d$state_id==3 & (d$het_logr_prob==1 | d$hom_logr_prob==1) & d$mbaf_prob==1 &
+    d$num_het_snps > MIN_REQUIRED_HET_SNPS, "feature_id"]
+  
+  state_gain = d[d$state_id%in%c(4,5,7,8) & ( d$het_logr_prob==1 | d$hom_logr_prob==1 )& d$mbaf_prob==1,"feature_id"]
+  state_A = d[d$state_id==2 & (d$hom_logr_prob==1 | d$het_logr_prob==1) & d$mbaf_prob==1, "feature_id"]
+  
+  state_0 = d[d$state_id==1 & d$het_logr_prob==1 & d$hom_logr_prob==1 & d$mbaf_prob==1, "feature_id"]
+  state_0_mixed = d[d$state_id==2 & d$het_logr < -1 & d$hom_logr < -1, "feature_id"]
+  
+  orig.feats = sort(unique(d$feature_id))
+  feats = rep("AB",length(orig.feats))
+  feats[match(state_AA,orig.feats)] = "AA"
+  feats[match(state_gain,orig.feats)] = "AAB"
+  feats[match(state_A,orig.feats)] = "A"
+  feats[match(state_0,orig.feats)] = "0"
+  feats[match(state_0_mixed,orig.feats)] = "0"
+  
+  
+  ## Assign states to all bins
+  fff = cbind(d[match(orig.feats,d$feature_id),c(1,2,12:16)],feats)
+  
+  state = NULL
+  for(k in 1:nrow(all.bins)){
+    state[k] = as.character(fff[fff$start_snp_id<=all.bins[k,"stop_snp_id"] &
+           fff$stop_snp_id>=all.bins[k,"start_snp_id"],"feats"])[1]
+  }
+  n = length(state)
+  final = as.data.frame(cbind(rep(NA,n),rep(sample_id,n),rep(reference_id,n),rep(patient_id,n),
+    all.bins$chromosome,
+    snps[match(all.bins$start_snp_id,snps$snp_id),"position"],
+    snps[match(all.bins$stop_snp_id,snps$snp_id),"position"],
+    all.bins$start_snp_id,all.bins$stop_snp_id,state))
+  colnames(final) = c("feature_id","sample_id","reference_id","patient_id","chromosome",
+            "start_position","stop_position","start_snp_id","stop_snp_id","state")
+  ## delete previous analysis
+  rs = dbSendQuery(con,paste("delete from patient_feature_states where sample_id=",sample_id))
+  dbWriteTable(con, "patient_feature_states", final, row.names=F, append=TRUE)
+ 
+  ## #############################
+  ## Skip compressing features 
+  ## #############################
+
+}
+
+
+
+## Slots samples into MEMORY type database in the MySQL server
+slotSamplesInMemory = function(con, sample_ids){
+
+  ## Delete samples from memory
+  bla = dbSendQuery(con, "delete from data_memory")
+
+  for(i in 1:length(sample_ids)){
+    print(paste("Loading sample",i))
+    sample_id = sample_ids[i]
+    dbSendQuery(con,paste("select data.sample_id,data.snp_id,data.r,data.baf from data where sample_id= ",
+                          sample_id," INTO OUTFILE '/tmp/temptbl",i,".txt'",sep=""))
+    dbSendQuery(con,paste("load data infile '/tmp/temptbl",i,".txt' into table data_memory",sep=""))
+  }                                      
+
 }
 
 

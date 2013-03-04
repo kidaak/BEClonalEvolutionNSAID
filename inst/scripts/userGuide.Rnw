@@ -38,13 +38,28 @@
 
 \section{Getting started}
 
-<<echo=TRUE, results=hide, eval=FALSE>>=
-source("http://www.bioconductor.org/biocLite.R")
-biocLite(c("cryptsim"))
+<<echo=TRUE, results=hide, eval=TRUE>>=
+detach("package:BEClonalEvolutionNSAID")
+library("BEClonalEvolutionNSAID")
 @
 
 
 \section{Reading in data}
+
+<<echo=TRUE, results=hide, eval=TRUE>>=
+con = connectDb(dbname="sbep")
+@
+
+Slot samples into memory for quick retrieval
+<<echo=TRUE, results=hide, eval=TRUE>>=
+slotSamplesInMemory(con, c(258,261,168,332))
+@
+
+<<echo=TRUE, results=hide, eval=TRUE>>=
+segmentTechnicalReplicates(con)
+callStatesTechnicalReplicates(con)
+@
+
 
 <<echo=FALSE, results=hide, eval=TRUE>>=
 options(width=70)

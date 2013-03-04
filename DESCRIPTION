@@ -5,12 +5,13 @@ Version: 1.0.0
 Date: 2013-02-07
 Author: Rumen Kostadinov <rkostadi@jhsph.edu>
 Maintainer: Rumen Kostadinov <rkostadi@jhsph.edu>
-Description: R package accompanying "NSAIDs modulation clonal evolution in Barrett's esophagus" study by Kostadinov et al
+Description: R package accompanying NSAIDs modulation clonal evolution in Barretts esophagus study by Kostadinov et al
 License: Artistic-2.0
 Depends: R (>= 2.12.0)
 Imports: 
 Enhances: 
 Suggests:
+Collate: functions.R
 LazyLoad: yes
 biocViews: 
 Packaged: 
