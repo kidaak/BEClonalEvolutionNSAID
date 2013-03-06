@@ -676,5 +676,915 @@ slotSamplesInMemory = function(con, sample_ids){
 
 }
 
+## Plot Figure 3 version December 2012
+plotFigure3 = function(con){
 
+  require(Cairo)
+
+  ## Get patient_id and the reference sample id
+patients = t(dbGetQuery(con, "select distinct(patient_id) from acs_paired_samples"))
+
+all.period.0 = NULL
+all.period.1 = NULL
+all.period.2 = NULL
+period.0.scale = NULL
+period.1.scale = NULL
+period.2.scale = NULL
+period.0.all.cnaloh = NULL
+period.1.all.cnaloh = NULL
+period.2.all.cnaloh = NULL
+nc.users = c(1,3,4,5,6,7,8,9,10,12,13)
+cf.users = c(2,11)
+
+cnaloh.distrib.all = NULL
+cnaloh.distrib.new = NULL
+cnaloh.distrib.extinct = NULL
+cnaloh.distrib.final = NULL
+
+patient.on.nsaids.time = NULL
+patient.off.nsaids.time = NULL
+
+
+## Compute the average size of an alteration
+for(pind in 1:length(patients)){
+  patient_id = patients[pind]
+  print(paste("Patient",patient_id))
+  samples = dbGetQuery(con, paste("select * from acs_paired_samples where patient_id=",patient_id,
+    "order by endoscopy_date, biopsy_level"))
+
+  ## Calculate time
+  if(pind %in% nc.users){  
+    patient.on.nsaids.time = c(patient.on.nsaids.time,unique(samples[,"second_sampling_period_duration"]))
+    patient.off.nsaids.time = c(patient.off.nsaids.time,unique(samples[,"first_sampling_period_duration"]))
+  } else {
+    patient.on.nsaids.time = c(patient.on.nsaids.time,unique(samples[,"first_sampling_period_duration"]))
+    patient.off.nsaids.time = c(patient.off.nsaids.time,unique(samples[,"second_sampling_period_duration"]))
+  }
+
+  all.features = dbGetQuery(con, paste("select * from compressed_patient_feature_states",
+    "where patient_id=",patient_id," order by start_snp_id, sample_id"))
+  ## Re-order features by endoscopy date, biopsy level
+  samples.order = rep(order(samples[,"sample_id"]),nrow(all.features)/nrow(samples))
+  all.features.order.index = order(all.features[,"start_snp_id"],samples.order)
+  all.features = all.features[all.features.order.index,]
+  
+  feat.states = matrix(all.features[,"state"],ncol=nrow(samples),byrow=T)
+  feat.phased.states = matrix(all.features[,"state_phased"],ncol=nrow(samples),byrow=T)
+  feat.binary.states = matrix(all.features[,"state"],ncol=nrow(samples),byrow=T)
+  feat.binary.states[feat.binary.states!="AB"] = 1
+  feat.binary.states[feat.binary.states!=1] = 0
+  feat.size = matrix(all.features[,"stop_position"]-all.features[,"start_position"]+1,ncol=nrow(samples),byrow=T)
+  feat.chr = matrix(all.features[,"chromosome"],ncol=nrow(samples),byrow=T)
+  feat.start = matrix(all.features[,"start_position"],ncol=nrow(samples),byrow=T)
+  feat.stop = matrix(all.features[,"stop_position"],ncol=nrow(samples),byrow=T)
+
+  ## Sort according to the binary pattern
+  patterns = apply(feat.binary.states,1,function(x) paste(x,collapse=""))
+  order.index = order(patterns)
+
+  sgas.summary = NULL
+  sgas.summary = cbind(rep("",ncol(samples)),rep("",ncol(samples)),rep("",ncol(samples)),rep("",ncol(samples))) 
+  for(i in 1:nrow(samples)){
+    sgas.summary = cbind(sgas.summary,t(samples[i,]))
+  }
+  sgas.summary[1:nrow(sgas.summary),4] = names(samples)
+  sgas.summary = rbind(sgas.summary,rep("",ncol(sgas.summary)))
+  sgas.summary[nrow(sgas.summary),c(1:4)] = c("chromosome","start","stop","size")
+
+  feat.binary.states = feat.binary.states[order.index,]
+  feat.states = feat.states[order.index,]
+  feat.phased.states = feat.phased.states[order.index,]
+  feat.chr = feat.chr[order.index,]
+  feat.start = feat.start[order.index,]
+  feat.stop = feat.stop[order.index,]
+  feat.size = feat.size[order.index,]
+
+  colnames(sgas.summary) = c(1:ncol(sgas.summary))
+  colnames(feat.binary.states) = c(1:ncol(feat.binary.states))
+  colnames(feat.states) = c(1:ncol(feat.states))
+  colnames(feat.phased.states) = c(1:ncol(feat.phased.states))
+  colnames(feat.chr) = c(1:ncol(feat.chr))
+  colnames(feat.start) = c(1:ncol(feat.start))
+  colnames(feat.stop) = c(1:ncol(feat.stop))
+  colnames(feat.size) = c(1:ncol(feat.size))
+  
+  binary.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.binary.states))
+  unphased.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.states))
+  phased.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.phased.states))
+
+  feat.binary.states = data.frame(as.numeric(feat.chr[,1]),feat.start[,1],feat.stop[,1],feat.binary.states)
+
+
+
+  ## Baseline, off, on nsaids
+  samples.period.0 = which(samples[,"endo_age_from_baseline"]==0)
+  samples.period.1 = which(samples[,"endo_age_from_baseline"]<samples[,"nsaids_transition_age_from_baseline"] &
+                           samples[,"endo_age_from_baseline"]>0)
+  samples.period.2 = which(samples[,"endo_age_from_baseline"]>samples[,"nsaids_transition_age_from_baseline"])
+  
+  ## Plot total SGA
+  feats.period.0 = feat.binary.states[,c(1:3,samples.period.0+3)]
+  feats.period.1 = feat.binary.states[,c(1:3,samples.period.1+3)]
+  feats.period.2 = feat.binary.states[,c(1:3,samples.period.2+3)]
+
+  feat.freq.period.0 = apply(feats.period.0, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+  feat.freq.period.1 = apply(feats.period.1, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+  feat.freq.period.2 = apply(feats.period.2, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+  
+  ## Select CNA/LOH events that are novel for the periods on/off nsaids 
+  feats.period.1 = feats.period.1[feat.freq.period.0==0,]
+  feats.period.2 = feats.period.2[feat.freq.period.0==0 & feat.freq.period.1==0,]
+  
+  new.endo.at.bx = c(TRUE,diff(samples[,"endo_age_from_baseline"])>0)
+  
+  for(i in 4:ncol(feat.binary.states)){
+    feats = NULL
+    ## Calculate the time elapsed since last endo
+    endo.age.current.bx = samples[(i-3),"endo_age_from_baseline"]
+    previous.endos.age = samples[which(samples[,"endo_age_from_baseline"]<endo.age.current.bx),"endo_age_from_baseline"]
+    if(length(previous.endos.age)==0){
+      endo.time = 1 ## Still baseline biopsies
+    } else {
+      endo.time = endo.age.current.bx - max(previous.endos.age)
+    }
+
+    if((i-3)%in%samples.period.0){
+      sid=0
+      feats = feat.binary.states[,c(1:3,i)]
+      ## Save all SGAs present at baseline biopsies to "feat.freq.period.0"
+      ## to mark them as observed
+      feat.freq.period.0[feat.binary.states[,i]==1] = 1
+    }
+    if((i-3)%in%samples.period.1){
+      sid=1
+      feats = feat.binary.states[,c(1:3,i)]
+      ## These are all the new SGAs      
+      feats = feats[feat.freq.period.0==0,]
+
+      ## Upon a new endoscopy, add all biopsies from the previous endoscopy to the list of existing SGAs
+      if(new.endo.at.bx[i-3]){
+        feats.2 = feat.binary.states[,which(samples[,"endo_age_from_baseline"]==max(previous.endos.age))+3]
+        if(!is.null(ncol(feats.2))){
+          feats.3 = apply(feats.2, 1, function(x) any(as.logical(as.numeric(as.character(x)))) )
+        } else {
+          feats.3 = as.logical(as.numeric(as.character(feats.2)))
+        }
+        feat.freq.period.0[feats.3] = 1
+      }
+    }
+    if((i-3)%in%samples.period.2){
+      sid=2
+      feats = feat.binary.states[,c(1:3,i)]
+      ## These are all the new SGAs      
+      feats = feats[feat.freq.period.0==0,]
+      
+      if(new.endo.at.bx[i-3]){
+        feats.2 = feat.binary.states[,which(samples[,"endo_age_from_baseline"]==max(previous.endos.age))+3]
+        if(!is.null(ncol(feats.2))){
+          feats.3 = apply(feats.2, 1, function(x) any(as.logical(as.numeric(as.character(x)))) )
+        } else {
+          feats.3 = as.logical(as.numeric(as.character(feats.2)))
+        }
+        feat.freq.period.0[feats.3] = 1
+      }
+    }    
+    ## Divide by time elapsed since last endo
+    cnaloh.distrib.new = rbind(cnaloh.distrib.new,cbind(pind,sid,t(table(cut(log10(
+      feats[feats[,4]==1,3]-feats[feats[,4]==1,2]),
+      breaks = c(-Inf,seq(2,7,by=1),Inf),right=T)))/endo.time
+      ))
+  }
+
+  ## Calculate extinct events, events that are present at 0% frequency in LAST endo
+  samples.period.0 = which(samples[,"endo_age_from_baseline"]<samples[,"nsaids_transition_age_from_baseline"])
+  samples.period.1 = which(samples[,"endo_age_from_baseline"]>samples[,"nsaids_transition_age_from_baseline"] & 
+                           samples[,"endo_coalescent_age"]>0)
+  samples.period.2 = which(samples[,"endo_coalescent_age"]==0)
+
+  feats.period.0 = feat.binary.states[,c(1:3,samples.period.0+3)]
+  feats.period.1 = feat.binary.states[,c(1:3,samples.period.1+3)]
+  feats.period.2 = feat.binary.states[,c(1:3,samples.period.2+3)]
+
+  feat.freq.period.0 = apply(feats.period.0, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+  feat.freq.period.1 = apply(feats.period.1, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+  feat.freq.period.2 = apply(feats.period.2, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+
+
+
+  ##new.endo.at.bx = c(TRUE,diff(samples[,"endo_age_from_baseline"])>0)
+  
+  for(i in 4:ncol(feat.binary.states)){
+    feats = NULL
+    ## Calculate the time elapsed since last endo
+    endo.age.current.bx = samples[(i-3),"endo_age_from_baseline"]
+    ## Get the ages of biopsies in all future endoscopies
+    future.bxs.age = samples[which(samples[,"endo_age_from_baseline"]>endo.age.current.bx),"endo_age_from_baseline"]
+    if(length(future.bxs.age)==0){
+      endo.time = 1 ## Still baseline biopsies
+    } else {
+      endo.time = min(future.bxs.age) - endo.age.current.bx
+    }
+
+    if((i-3)%in%samples.period.0){
+      sid=0
+      feats = feat.binary.states[,c(1:3,i)]
+      ## Calculate all future events in all future endos
+      feats.2 = feat.binary.states[,which(samples[,"endo_age_from_baseline"]%in%future.bxs.age)+3]
+      if(!is.null(ncol(feats.2))){
+        feats.3 = apply(feats.2, 1, function(x) any(as.logical(as.numeric(as.character(x)))) )
+      } else {
+        feats.3 = as.logical(as.numeric(as.character(feats.2)))
+      }
+      
+      ## These are all the new SGAs that went extinct in future biopsies in future endos      
+      feats = feats[feats.3==FALSE,]
+    }
+    if((i-3)%in%samples.period.1){
+      sid=1
+      feats = feat.binary.states[,c(1:3,i)]
+      ## Calculate all future events in all future endos
+      feats.2 = feat.binary.states[,which(samples[,"endo_age_from_baseline"]%in%future.bxs.age)+3]
+      if(!is.null(ncol(feats.2))){
+        feats.3 = apply(feats.2, 1, function(x) any(as.logical(as.numeric(as.character(x)))) )
+      } else {
+        feats.3 = as.logical(as.numeric(as.character(feats.2)))
+      }      
+      ## These are all the new SGAs that went extinct in future biopsies in future endos      
+      feats = feats[feats.3==FALSE,]
+    }
+    if((i-3)%in%samples.period.2){
+      sid=2
+      feats = feat.binary.states[,c(1:3,i)]
+      ## These are all the new SGAs      
+      feats = feats[feat.freq.period.0==0,]
+    }    
+    ## Divide by time elapsed since last endo
+    cnaloh.distrib.extinct = rbind(cnaloh.distrib.extinct,cbind(pind,sid,t(table(cut(log10(
+      feats[feats[,4]==1,3]-feats[feats[,4]==1,2]),
+      breaks = c(-Inf,seq(2,7,by=1),Inf),right=T)))/endo.time
+      ))
+  }
+
+
+}
+
+
+
+  ##pdf("kostadinov_fig_new_sga_events_boxplot_sep12.pdf",width=3,height=3,pointsize=10)
+  par(mfrow=c(1,1),mar=c(4,4,1,1))
+  p1 = cnaloh.distrib.new[(cnaloh.distrib.new[,1]%in%nc.users & cnaloh.distrib.new[,2]==1) |
+    (cnaloh.distrib.new[,1]%in%cf.users & cnaloh.distrib.new[,2]==2),3:ncol(cnaloh.distrib.new)]
+  p2 = cnaloh.distrib.new[(cnaloh.distrib.new[,1]%in%nc.users & cnaloh.distrib.new[,2]==2) |
+    (cnaloh.distrib.new[,1]%in%cf.users & cnaloh.distrib.new[,2]==1),3:ncol(cnaloh.distrib.new)]
+  ## Omit outliers
+  bp = boxplot(p1[,1],p2[,1],
+    p1[,2],p2[,2],
+    p1[,3],p2[,3],
+    p1[,4],p2[,4],
+    p1[,5],p2[,5],
+    p1[,6],p2[,6],
+    p1[,7],p2[,7],
+    ylim=c(-2,25),
+    col=c("white","gray"),las=2,axes=F,outline=T,outcex=0.7,whisklty="solid",medlty="solid",medlwd=1,
+    at=sort(c(seq(1.2,13.2,by=2),seq(1.8,13.8,by=2))),
+    boxwex=0.5, plot=F)
+  bxp(bp,ylim=c(-2,25),
+      boxfill=c("white","darkgray"),las=2,axes=F,staplewex=1,outline=F,outcex=0.5,whisklty="solid",medlty="solid",medlwd=1,
+      at=sort(c(seq(1.1,13.1,by=2),seq(1.9,13.9,by=2))),
+      boxwex=0.6)
+  
+  axis(1,at=seq(0.5,14.5,by=2),lty=1, c(0,expression(10^2),expression(10^3),expression(10^4),
+                                 expression(10^5),expression(10^6),expression(10^7),expression(10^8)) )
+  axis(2,at=seq(0,30,by=5),las=1)
+  
+  box()
+  mtext(side=2,line=3, "Number of SGA per biopsy per year")
+  mtext(side=1,line=2, "Lesion size (bp)")
+  
+  legend("topright", legend=c("Off NSAID","On NSAID","Wilcoxon p<.05"),
+         fill=c("white","darkgray",NA),
+         border=c("black","black",NA),
+         lty=c(0,0,0),lwd=c(0,0,1),pch=c(NA,NA,8),merge=T,box.col="black",cex=0.5,bg="white")
+  
+  for(i in 1:7){
+    pval = wilcox.test(p1[,i],p2[,i],alt="greater")$p.val
+    if(pval<0.05){
+      ## segments(i*2-1,-2,i*2,-2)
+      ## segments(i*2-1,-2,i*2-1,-0.5)
+      ## segments(i*2,-2,i*2,-0.5)
+      points(i*2-0.5,-2,pch=8,cex=0.5)
+    }
+    ##text(paste("p=",round(pval,digits=2),sep=""),x=(i-3)*4+2.5,y=p1.mean[i-2]+1.96*p1.sd[i-2]/sqrt(nrow(p1))+1,cex=0.8)
+    print(pval)
+  }
+  
+  ##dev.off()
+  
+}
+
+
+
+
+
+## Plot Figure 3 version December 2012
+plotFigure3Regressions = function(con){
+
+  require(Cairo)
+
+  ## Get patient_id and the reference sample id
+patients = t(dbGetQuery(con, "select distinct(patient_id) from acs_paired_samples"))
+
+all.period.0 = NULL
+all.period.1 = NULL
+all.period.2 = NULL
+period.0.scale = NULL
+period.1.scale = NULL
+period.2.scale = NULL
+period.0.all.cnaloh = NULL
+period.1.all.cnaloh = NULL
+period.2.all.cnaloh = NULL
+nc.users = c(1,3,4,5,6,7,8,9,10,12,13)
+cf.users = c(2,11)
+
+cnaloh.distrib.all = NULL
+cnaloh.distrib.new = NULL
+cnaloh.distrib.extinct = NULL
+cnaloh.distrib.final = NULL
+
+patient.on.nsaids.time = NULL
+patient.off.nsaids.time = NULL
+
+
+## Compute the average size of an alteration
+for(pind in 1:length(patients)){
+  patient_id = patients[pind]
+  print(paste("Patient",patient_id))
+  samples = dbGetQuery(con, paste("select * from acs_paired_samples where patient_id=",patient_id,
+    "order by endoscopy_date, biopsy_level"))
+
+  ## Calculate time
+  if(pind %in% nc.users){  
+    patient.on.nsaids.time = c(patient.on.nsaids.time,unique(samples[,"second_sampling_period_duration"]))
+    patient.off.nsaids.time = c(patient.off.nsaids.time,unique(samples[,"first_sampling_period_duration"]))
+  } else {
+    patient.on.nsaids.time = c(patient.on.nsaids.time,unique(samples[,"first_sampling_period_duration"]))
+    patient.off.nsaids.time = c(patient.off.nsaids.time,unique(samples[,"second_sampling_period_duration"]))
+  }
+
+  all.features = dbGetQuery(con, paste("select * from compressed_patient_feature_states",
+    "where patient_id=",patient_id," order by start_snp_id, sample_id"))
+  ## Re-order features by endoscopy date, biopsy level
+  samples.order = rep(order(samples[,"sample_id"]),nrow(all.features)/nrow(samples))
+  all.features.order.index = order(all.features[,"start_snp_id"],samples.order)
+  all.features = all.features[all.features.order.index,]
+  
+  feat.states = matrix(all.features[,"state"],ncol=nrow(samples),byrow=T)
+  feat.phased.states = matrix(all.features[,"state_phased"],ncol=nrow(samples),byrow=T)
+  feat.binary.states = matrix(all.features[,"state"],ncol=nrow(samples),byrow=T)
+  feat.binary.states[feat.binary.states!="AB"] = 1
+  feat.binary.states[feat.binary.states!=1] = 0
+  feat.size = matrix(all.features[,"stop_position"]-all.features[,"start_position"]+1,ncol=nrow(samples),byrow=T)
+  feat.chr = matrix(all.features[,"chromosome"],ncol=nrow(samples),byrow=T)
+  feat.start = matrix(all.features[,"start_position"],ncol=nrow(samples),byrow=T)
+  feat.stop = matrix(all.features[,"stop_position"],ncol=nrow(samples),byrow=T)
+
+  ## Sort according to the binary pattern
+  patterns = apply(feat.binary.states,1,function(x) paste(x,collapse=""))
+  order.index = order(patterns)
+
+  sgas.summary = NULL
+  sgas.summary = cbind(rep("",ncol(samples)),rep("",ncol(samples)),rep("",ncol(samples)),rep("",ncol(samples))) 
+  for(i in 1:nrow(samples)){
+    sgas.summary = cbind(sgas.summary,t(samples[i,]))
+  }
+  sgas.summary[1:nrow(sgas.summary),4] = names(samples)
+  sgas.summary = rbind(sgas.summary,rep("",ncol(sgas.summary)))
+  sgas.summary[nrow(sgas.summary),c(1:4)] = c("chromosome","start","stop","size")
+
+  feat.binary.states = feat.binary.states[order.index,]
+  feat.states = feat.states[order.index,]
+  feat.phased.states = feat.phased.states[order.index,]
+  feat.chr = feat.chr[order.index,]
+  feat.start = feat.start[order.index,]
+  feat.stop = feat.stop[order.index,]
+  feat.size = feat.size[order.index,]
+
+  colnames(sgas.summary) = c(1:ncol(sgas.summary))
+  colnames(feat.binary.states) = c(1:ncol(feat.binary.states))
+  colnames(feat.states) = c(1:ncol(feat.states))
+  colnames(feat.phased.states) = c(1:ncol(feat.phased.states))
+  colnames(feat.chr) = c(1:ncol(feat.chr))
+  colnames(feat.start) = c(1:ncol(feat.start))
+  colnames(feat.stop) = c(1:ncol(feat.stop))
+  colnames(feat.size) = c(1:ncol(feat.size))
+  
+  binary.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.binary.states))
+  unphased.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.states))
+  phased.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.phased.states))
+
+  feat.binary.states = data.frame(as.numeric(feat.chr[,1]),feat.start[,1],feat.stop[,1],feat.binary.states)
+
+
+
+  ## Baseline, off, on nsaids
+  samples.period.0 = which(samples[,"endo_age_from_baseline"]==0)
+  samples.period.1 = which(samples[,"endo_age_from_baseline"]<samples[,"nsaids_transition_age_from_baseline"] &
+                           samples[,"endo_age_from_baseline"]>0)
+  samples.period.2 = which(samples[,"endo_age_from_baseline"]>samples[,"nsaids_transition_age_from_baseline"])
+  
+  ## Plot total SGA
+  feats.period.0 = feat.binary.states[,c(1:3,samples.period.0+3)]
+  feats.period.1 = feat.binary.states[,c(1:3,samples.period.1+3)]
+  feats.period.2 = feat.binary.states[,c(1:3,samples.period.2+3)]
+
+  feat.freq.period.0 = apply(feats.period.0, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+  feat.freq.period.1 = apply(feats.period.1, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+  feat.freq.period.2 = apply(feats.period.2, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+  
+  ## Select CNA/LOH events that are novel for the periods on/off nsaids 
+  feats.period.1 = feats.period.1[feat.freq.period.0==0,]
+  feats.period.2 = feats.period.2[feat.freq.period.0==0 & feat.freq.period.1==0,]
+  
+  new.endo.at.bx = c(TRUE,diff(samples[,"endo_age_from_baseline"])>0)
+  
+  for(i in 4:ncol(feat.binary.states)){
+    feats = NULL
+    ## Calculate the time elapsed since last endo
+    endo.age.current.bx = samples[(i-3),"endo_age_from_baseline"]
+    previous.endos.age = samples[which(samples[,"endo_age_from_baseline"]<endo.age.current.bx),"endo_age_from_baseline"]
+    if(length(previous.endos.age)==0){
+      endo.time = 1 ## Still baseline biopsies
+    } else {
+      endo.time = endo.age.current.bx - max(previous.endos.age)
+    }
+
+    if((i-3)%in%samples.period.0){
+      sid=0
+      feats = feat.binary.states[,c(1:3,i)]
+      ## Save all SGAs present at baseline biopsies to "feat.freq.period.0"
+      ## to mark them as observed
+      feat.freq.period.0[feat.binary.states[,i]==1] = 1
+    }
+    if((i-3)%in%samples.period.1){
+      sid=1
+      feats = feat.binary.states[,c(1:3,i)]
+      ## These are all the new SGAs      
+      feats = feats[feat.freq.period.0==0,]
+
+      ## Upon a new endoscopy, add all biopsies from the previous endoscopy to the list of existing SGAs
+      if(new.endo.at.bx[i-3]){
+        feats.2 = feat.binary.states[,which(samples[,"endo_age_from_baseline"]==max(previous.endos.age))+3]
+        if(!is.null(ncol(feats.2))){
+          feats.3 = apply(feats.2, 1, function(x) any(as.logical(as.numeric(as.character(x)))) )
+        } else {
+          feats.3 = as.logical(as.numeric(as.character(feats.2)))
+        }
+        feat.freq.period.0[feats.3] = 1
+      }
+    }
+    if((i-3)%in%samples.period.2){
+      sid=2
+      feats = feat.binary.states[,c(1:3,i)]
+      ## These are all the new SGAs      
+      feats = feats[feat.freq.period.0==0,]
+      
+      if(new.endo.at.bx[i-3]){
+        feats.2 = feat.binary.states[,which(samples[,"endo_age_from_baseline"]==max(previous.endos.age))+3]
+        if(!is.null(ncol(feats.2))){
+          feats.3 = apply(feats.2, 1, function(x) any(as.logical(as.numeric(as.character(x)))) )
+        } else {
+          feats.3 = as.logical(as.numeric(as.character(feats.2)))
+        }
+        feat.freq.period.0[feats.3] = 1
+      }
+    }    
+    ## Divide by time elapsed since last endo
+    cnaloh.distrib.new = rbind(cnaloh.distrib.new,cbind(pind,sid,t(table(cut(log10(
+      feats[feats[,4]==1,3]-feats[feats[,4]==1,2]),
+      breaks = c(-Inf,seq(2,7,by=1),Inf),right=T)))/endo.time
+      ))
+  }
+
+  ## Calculate extinct events, events that are present at 0% frequency in LAST endo
+  samples.period.0 = which(samples[,"endo_age_from_baseline"]<samples[,"nsaids_transition_age_from_baseline"])
+  samples.period.1 = which(samples[,"endo_age_from_baseline"]>samples[,"nsaids_transition_age_from_baseline"] & 
+                           samples[,"endo_coalescent_age"]>0)
+  samples.period.2 = which(samples[,"endo_coalescent_age"]==0)
+
+  feats.period.0 = feat.binary.states[,c(1:3,samples.period.0+3)]
+  feats.period.1 = feat.binary.states[,c(1:3,samples.period.1+3)]
+  feats.period.2 = feat.binary.states[,c(1:3,samples.period.2+3)]
+
+  feat.freq.period.0 = apply(feats.period.0, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+  feat.freq.period.1 = apply(feats.period.1, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+  feat.freq.period.2 = apply(feats.period.2, 1, function(x) round(sum(as.numeric(x[4:length(x)]),na.rm=T)/(length(x)-3),digits=2))
+
+
+
+  ##new.endo.at.bx = c(TRUE,diff(samples[,"endo_age_from_baseline"])>0)
+  
+  for(i in 4:ncol(feat.binary.states)){
+    feats = NULL
+    ## Calculate the time elapsed since last endo
+    endo.age.current.bx = samples[(i-3),"endo_age_from_baseline"]
+    ## Get the ages of biopsies in all future endoscopies
+    future.bxs.age = samples[which(samples[,"endo_age_from_baseline"]>endo.age.current.bx),"endo_age_from_baseline"]
+    if(length(future.bxs.age)==0){
+      endo.time = 1 ## Still baseline biopsies
+    } else {
+      endo.time = min(future.bxs.age) - endo.age.current.bx
+    }
+
+    if((i-3)%in%samples.period.0){
+      sid=0
+      feats = feat.binary.states[,c(1:3,i)]
+      ## Calculate all future events in all future endos
+      feats.2 = feat.binary.states[,which(samples[,"endo_age_from_baseline"]%in%future.bxs.age)+3]
+      if(!is.null(ncol(feats.2))){
+        feats.3 = apply(feats.2, 1, function(x) any(as.logical(as.numeric(as.character(x)))) )
+      } else {
+        feats.3 = as.logical(as.numeric(as.character(feats.2)))
+      }
+      
+      ## These are all the new SGAs that went extinct in future biopsies in future endos      
+      feats = feats[feats.3==FALSE,]
+    }
+    if((i-3)%in%samples.period.1){
+      sid=1
+      feats = feat.binary.states[,c(1:3,i)]
+      ## Calculate all future events in all future endos
+      feats.2 = feat.binary.states[,which(samples[,"endo_age_from_baseline"]%in%future.bxs.age)+3]
+      if(!is.null(ncol(feats.2))){
+        feats.3 = apply(feats.2, 1, function(x) any(as.logical(as.numeric(as.character(x)))) )
+      } else {
+        feats.3 = as.logical(as.numeric(as.character(feats.2)))
+      }      
+      ## These are all the new SGAs that went extinct in future biopsies in future endos      
+      feats = feats[feats.3==FALSE,]
+    }
+    if((i-3)%in%samples.period.2){
+      sid=2
+      feats = feat.binary.states[,c(1:3,i)]
+      ## These are all the new SGAs      
+      feats = feats[feat.freq.period.0==0,]
+    }    
+    ## Divide by time elapsed since last endo
+    cnaloh.distrib.extinct = rbind(cnaloh.distrib.extinct,cbind(pind,sid,t(table(cut(log10(
+      feats[feats[,4]==1,3]-feats[feats[,4]==1,2]),
+      breaks = c(-Inf,seq(2,7,by=1),Inf),right=T)))/endo.time
+      ))
+  }
+
+
+}
+
+
+
+
+
+
+  ##pdf("kostadinov_fig_extinct_sga_events_boxplot_sep12.pdf",width=3,height=3,pointsize=10)
+par(mfrow=c(1,1),mar=c(4,4,1,1))
+p1 = cnaloh.distrib.extinct[(cnaloh.distrib.extinct[,1]%in%nc.users & cnaloh.distrib.extinct[,2]==0) |
+                        (cnaloh.distrib.extinct[,1]%in%cf.users & cnaloh.distrib.extinct[,2]==1),3:ncol(cnaloh.distrib.extinct)]
+p2 = cnaloh.distrib.extinct[(cnaloh.distrib.extinct[,1]%in%nc.users & cnaloh.distrib.extinct[,2]==1) |
+                        (cnaloh.distrib.extinct[,1]%in%cf.users & cnaloh.distrib.extinct[,2]==0),3:ncol(cnaloh.distrib.extinct)]
+boxplot(p1[,1],p2[,1],
+        p1[,2],p2[,2],
+        p1[,3],p2[,3],
+        p1[,4],p2[,4],
+        p1[,5],p2[,5],
+        p1[,6],p2[,6],
+        p1[,7],p2[,7],
+        ylim=c(-2,25),
+        col=c("white","darkgray"),las=2,axes=F,outline=F,outcex=0.5,whisklty="solid",staplewex=1,medlty="solid",medlwd=1,
+        at=sort(c(seq(1.1,13.1,by=2),seq(1.9,13.9,by=2))),
+        boxwex=0.6)
+axis(1,at=seq(0.5,14.5,by=2),lty=1, c(0,expression(10^2),expression(10^3),expression(10^4),
+                           expression(10^5),expression(10^6),expression(10^7),expression(10^8)) )
+axis(2,at=seq(0,25,by=5),las=1)
+box()
+mtext(side=2,line=3, "Number of SGA per biopsy per year")
+mtext(side=1,line=2, "Lesion size (bp)")
+
+
+legend("topright", legend=c("Off NSAID","On NSAID","Wilcoxon p<.05"),
+       fill=c("white","darkgray",NA),
+       border=c("black","black",NA),
+       lty=c(0,0,0),lwd=c(0,0,1),pch=c(NA,NA,8),merge=T,box.col="black",cex=0.5,bg="white")
+
+for(i in 1:7){
+  pval = wilcox.test(p1[,i],p2[,i],alt="less")$p.val
+  if(pval<0.05){
+    ## segments(i*2-1,-2,i*2,-2)
+    ## segments(i*2-1,-2,i*2-1,-0.5)
+    ## segments(i*2,-2,i*2,-0.5)
+    points(i*2-0.5,-2,pch=8,cex=0.5)
+  }
+  ##text(paste("p=",round(pval,digits=2),sep=""),x=(i-3)*4+2.5,y=p1.mean[i-2]+1.96*p1.sd[i-2]/sqrt(nrow(p1))+1,cex=0.8)
+  print(pval)
+}
+
+##dev.off()
+
+  
+}
+
+
+
+
+## Figure 3, plot all of the lesions that occur on NSAID and off NSAID
+## totals for each biopsy, do not remove anything.
+plotFigure3Totals = function(con){
+
+  require(Cairo)
+
+  ## Get patient_id and the reference sample id
+patients = t(dbGetQuery(con, "select distinct(patient_id) from acs_paired_samples"))
+
+all.period.0 = NULL
+all.period.1 = NULL
+all.period.2 = NULL
+period.0.scale = NULL
+period.1.scale = NULL
+period.2.scale = NULL
+period.0.all.cnaloh = NULL
+period.1.all.cnaloh = NULL
+period.2.all.cnaloh = NULL
+nc.users = c(1,3,4,5,6,7,8,9,10,12,13)
+cf.users = c(2,11)
+
+cnaloh.distrib.all = NULL
+cnaloh.distrib.new = NULL
+cnaloh.distrib.extinct = NULL
+cnaloh.distrib.final = NULL
+
+patient.on.nsaids.time = NULL
+patient.off.nsaids.time = NULL
+
+
+## Compute the average size of an alteration
+for(pind in 1:length(patients)){
+  patient_id = patients[pind]
+  print(paste("Patient",patient_id))
+  samples = dbGetQuery(con, paste("select * from acs_paired_samples where patient_id=",patient_id,
+    "order by endoscopy_date, biopsy_level"))
+
+  ## Calculate time
+  if(pind %in% nc.users){  
+    patient.on.nsaids.time = c(patient.on.nsaids.time,unique(samples[,"second_sampling_period_duration"]))
+    patient.off.nsaids.time = c(patient.off.nsaids.time,unique(samples[,"first_sampling_period_duration"]))
+  } else {
+    patient.on.nsaids.time = c(patient.on.nsaids.time,unique(samples[,"first_sampling_period_duration"]))
+    patient.off.nsaids.time = c(patient.off.nsaids.time,unique(samples[,"second_sampling_period_duration"]))
+  }
+
+  all.features = dbGetQuery(con, paste("select * from compressed_patient_feature_states",
+    "where patient_id=",patient_id," order by start_snp_id, sample_id"))
+  ## Re-order features by endoscopy date, biopsy level
+  samples.order = rep(order(samples[,"sample_id"]),nrow(all.features)/nrow(samples))
+  all.features.order.index = order(all.features[,"start_snp_id"],samples.order)
+  all.features = all.features[all.features.order.index,]
+  
+  feat.states = matrix(all.features[,"state"],ncol=nrow(samples),byrow=T)
+  feat.phased.states = matrix(all.features[,"state_phased"],ncol=nrow(samples),byrow=T)
+  feat.binary.states = matrix(all.features[,"state"],ncol=nrow(samples),byrow=T)
+  feat.binary.states[feat.binary.states!="AB"] = 1
+  feat.binary.states[feat.binary.states!=1] = 0
+  feat.size = matrix(all.features[,"stop_position"]-all.features[,"start_position"]+1,ncol=nrow(samples),byrow=T)
+  feat.chr = matrix(all.features[,"chromosome"],ncol=nrow(samples),byrow=T)
+  feat.start = matrix(all.features[,"start_position"],ncol=nrow(samples),byrow=T)
+  feat.stop = matrix(all.features[,"stop_position"],ncol=nrow(samples),byrow=T)
+
+  ## Sort according to the binary pattern
+  patterns = apply(feat.binary.states,1,function(x) paste(x,collapse=""))
+  order.index = order(patterns)
+
+  sgas.summary = NULL
+  sgas.summary = cbind(rep("",ncol(samples)),rep("",ncol(samples)),rep("",ncol(samples)),rep("",ncol(samples))) 
+  for(i in 1:nrow(samples)){
+    sgas.summary = cbind(sgas.summary,t(samples[i,]))
+  }
+  sgas.summary[1:nrow(sgas.summary),4] = names(samples)
+  sgas.summary = rbind(sgas.summary,rep("",ncol(sgas.summary)))
+  sgas.summary[nrow(sgas.summary),c(1:4)] = c("chromosome","start","stop","size")
+
+  feat.binary.states = feat.binary.states[order.index,]
+  feat.states = feat.states[order.index,]
+  feat.phased.states = feat.phased.states[order.index,]
+  feat.chr = feat.chr[order.index,]
+  feat.start = feat.start[order.index,]
+  feat.stop = feat.stop[order.index,]
+  feat.size = feat.size[order.index,]
+
+  colnames(sgas.summary) = c(1:ncol(sgas.summary))
+  colnames(feat.binary.states) = c(1:ncol(feat.binary.states))
+  colnames(feat.states) = c(1:ncol(feat.states))
+  colnames(feat.phased.states) = c(1:ncol(feat.phased.states))
+  colnames(feat.chr) = c(1:ncol(feat.chr))
+  colnames(feat.start) = c(1:ncol(feat.start))
+  colnames(feat.stop) = c(1:ncol(feat.stop))
+  colnames(feat.size) = c(1:ncol(feat.size))
+  
+  binary.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.binary.states))
+  unphased.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.states))
+  phased.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.phased.states))
+
+  feat.binary.states = data.frame(as.numeric(feat.chr[,1]),feat.start[,1],feat.stop[,1],feat.binary.states)
+
+  ## Two periods, one before NSAID transition point and one after it
+  samples.period.1 = which(samples[,"endo_age_from_baseline"]<samples[,"nsaids_transition_age_from_baseline"])
+  samples.period.2 = which(samples[,"endo_age_from_baseline"]>samples[,"nsaids_transition_age_from_baseline"])
+  
+  ## Get SGAs
+  feats.period.1 = feat.binary.states[,c(1:3,samples.period.1+3)]
+  feats.period.2 = feat.binary.states[,c(1:3,samples.period.2+3)]
+
+  for(i in 4:ncol(feat.binary.states)){
+    if((i-3)%in%samples.period.1){
+      sid=1
+      feats = feat.binary.states[,c(1:3,i)]      
+    }
+    if((i-3)%in%samples.period.2){
+      sid=2
+      feats = feat.binary.states[,c(1:3,i)]      
+    }
+    cnaloh.distrib.new = rbind(cnaloh.distrib.new,cbind(pind,sid,t(table(cut(log10(
+      feats[feats[,4]==1,3]-feats[feats[,4]==1,2]),
+      breaks = c(-Inf,seq(2,7,by=1),Inf),right=T)))))
+  }
+  
+}
+
+
+
+  ##pdf("kostadinov_fig_new_sga_events_boxplot_sep12.pdf",width=3,height=3,pointsize=10)
+  par(mfrow=c(1,1),mar=c(4,4,1,1))
+  p1 = cnaloh.distrib.new[(cnaloh.distrib.new[,1]%in%nc.users & cnaloh.distrib.new[,2]==1) |
+    (cnaloh.distrib.new[,1]%in%cf.users & cnaloh.distrib.new[,2]==2),3:ncol(cnaloh.distrib.new)]
+  p2 = cnaloh.distrib.new[(cnaloh.distrib.new[,1]%in%nc.users & cnaloh.distrib.new[,2]==2) |
+    (cnaloh.distrib.new[,1]%in%cf.users & cnaloh.distrib.new[,2]==1),3:ncol(cnaloh.distrib.new)]
+  ## Omit outliers
+  bp = boxplot(p1[,1],p2[,1],
+    p1[,2],p2[,2],
+    p1[,3],p2[,3],
+    p1[,4],p2[,4],
+    p1[,5],p2[,5],
+    p1[,6],p2[,6],
+    p1[,7],p2[,7],
+    ylim=c(-2,700),
+    col=c("white","gray"),las=2,axes=F,outline=T,outcex=0.7,whisklty="solid",medlty="solid",medlwd=1,
+    at=sort(c(seq(1.2,13.2,by=2),seq(1.8,13.8,by=2))),
+    boxwex=0.5, plot=F)
+  bxp(bp,ylim=c(-2,700),
+      boxfill=c("white","darkgray"),las=2,axes=F,staplewex=1,outline=F,outcex=0.5,whisklty="solid",medlty="solid",medlwd=1,
+      at=sort(c(seq(1.1,13.1,by=2),seq(1.9,13.9,by=2))),
+      boxwex=0.6)
+  
+  axis(1,at=seq(0.5,14.5,by=2),lty=1, c(0,expression(10^2),expression(10^3),expression(10^4),
+                                 expression(10^5),expression(10^6),expression(10^7),expression(10^8)) )
+  axis(2,at=seq(0,700,by=100),las=1)
+  
+  box()
+  mtext(side=2,line=3, "Number of SGA per biopsy per year")
+  mtext(side=1,line=2, "Lesion size (bp)")
+  
+  legend("topright", legend=c("Off NSAID","On NSAID","Wilcoxon p<.05"),
+         fill=c("white","darkgray",NA),
+         border=c("black","black",NA),
+         lty=c(0,0,0),lwd=c(0,0,1),pch=c(NA,NA,8),merge=T,box.col="black",cex=0.5,bg="white")
+
+
+  par(mfrow=c(3,5),mar=c(4,4,1,1))
+  pvals=matrix(NA,nrow=13,ncol=7)
+  options(width=200)
+  for(j in 1:13){
+    sga.distrib = cnaloh.distrib.new[cnaloh.distrib.new[,"pind"]==j,]
+    p1 = sga.distrib[(sga.distrib[,1]%in%nc.users & sga.distrib[,2]==1) |
+      (sga.distrib[,1]%in%cf.users & sga.distrib[,2]==2),3:ncol(sga.distrib)]
+    p2 = sga.distrib[(sga.distrib[,1]%in%nc.users & sga.distrib[,2]==2) |
+      (sga.distrib[,1]%in%cf.users & sga.distrib[,2]==1),3:ncol(sga.distrib)]
+    for(i in 1:7){
+      pval = wilcox.test(p1[,i],p2[,i],alt="greater")$p.val
+      if(pval<0.05){
+        ## segments(i*2-1,-2,i*2,-2)
+        ## segments(i*2-1,-2,i*2-1,-0.5)
+        ## segments(i*2,-2,i*2,-0.5)
+        ##points(i*2-0.5,-2,pch=8,cex=0.5)
+      }
+      ##text(paste("p=",round(pval,digits=2),sep=""),x=(i-3)*4+2.5,y=p1.mean[i-2]+1.96*p1.sd[i-2]/sqrt(nrow(p1))+1,cex=0.8)
+      pvals[j,i]=pval      
+    }
+    print(j)
+    print(summary(p1))
+    print(summary(p2))
+      bp = boxplot(p1[,1],p2[,1],
+    p1[,2],p2[,2],
+    p1[,3],p2[,3],
+    p1[,4],p2[,4],
+    p1[,5],p2[,5],
+    p1[,6],p2[,6],
+    p1[,7],p2[,7],
+    ylim=c(-2,700),
+    col=c("white","gray"),las=2,axes=F,outline=T,outcex=0.7,whisklty="solid",medlty="solid",medlwd=1,
+    at=sort(c(seq(1.2,13.2,by=2),seq(1.8,13.8,by=2))),
+    boxwex=0.5, plot=F)
+  bxp(bp,ylim=c(-2,700),
+      boxfill=c("white","darkgray"),las=2,axes=F,staplewex=1,outline=F,outcex=0.5,whisklty="solid",medlty="solid",medlwd=1,
+      at=sort(c(seq(1.1,13.1,by=2),seq(1.9,13.9,by=2))),
+      boxwex=0.6)
+  
+  axis(1,at=seq(0.5,14.5,by=2),lty=1, c(0,expression(10^2),expression(10^3),expression(10^4),
+                                 expression(10^5),expression(10^6),expression(10^7),expression(10^8)) )
+  axis(2,at=seq(0,700,by=100),las=1)
+  
+  box()
+  mtext(side=2,line=3, "Number of SGA per biopsy per year")
+  mtext(side=1,line=2, "Lesion size (bp)")
+  
+  legend("topright", legend=c("Off NSAID","On NSAID","Wilcoxon p<.05"),
+         fill=c("white","darkgray",NA),
+         border=c("black","black",NA),
+         lty=c(0,0,0),lwd=c(0,0,1),pch=c(NA,NA,8),merge=T,box.col="black",cex=0.5,bg="white")
+
+  }
+  
+  ##dev.off()
+
+
+
+
+  par(mfrow=c(3,5),mar=c(4,4,1,1))
+  pvals=matrix(NA,nrow=13,ncol=7)
+  options(width=200)
+  for(j in 1:13){
+    sga.distrib = cnaloh.distrib.new[cnaloh.distrib.new[,"pind"]==j,]
+    p1 = sga.distrib[(sga.distrib[,1]%in%nc.users & sga.distrib[,2]==1) |
+      (sga.distrib[,1]%in%cf.users & sga.distrib[,2]==2),3:ncol(sga.distrib)]
+    p2 = sga.distrib[(sga.distrib[,1]%in%nc.users & sga.distrib[,2]==2) |
+      (sga.distrib[,1]%in%cf.users & sga.distrib[,2]==1),3:ncol(sga.distrib)]
+    p1=rowSums(p1)
+    p2=rowSums(p2)
+    for(i in 1:7){
+      pval = wilcox.test(p1,p2,alt="greater")$p.val
+      if(pval<0.05){
+        ## segments(i*2-1,-2,i*2,-2)
+        ## segments(i*2-1,-2,i*2-1,-0.5)
+        ## segments(i*2,-2,i*2,-0.5)
+        ##points(i*2-0.5,-2,pch=8,cex=0.5)
+      }
+      ##text(paste("p=",round(pval,digits=2),sep=""),x=(i-3)*4+2.5,y=p1.mean[i-2]+1.96*p1.sd[i-2]/sqrt(nrow(p1))+1,cex=0.8)
+      pvals[j,i]=pval      
+    }
+    print(j)
+    print(summary(p1))
+    print(summary(p2))
+  }
+
+
+
+
+
+  
+
+
+
+
+
+
+  p1 = cnaloh.distrib.new[(cnaloh.distrib.new[,1]%in%nc.users & cnaloh.distrib.new[,2]==1) |
+    (cnaloh.distrib.new[,1]%in%cf.users & cnaloh.distrib.new[,2]==2),3:ncol(cnaloh.distrib.new)]
+  p2 = cnaloh.distrib.new[(cnaloh.distrib.new[,1]%in%nc.users & cnaloh.distrib.new[,2]==2) |
+    (cnaloh.distrib.new[,1]%in%cf.users & cnaloh.distrib.new[,2]==1),3:ncol(cnaloh.distrib.new)]
+  p1 = rowSums(p1)
+  p2 = rowSums(p2)
+  ## Omit outliers
+  bp = boxplot(p1,p2,
+    ylim=c(-2,2000),
+    col=c("white","gray"),las=2,axes=F,outline=T,outcex=0.7,whisklty="solid",medlty="solid",medlwd=1,
+    at=sort(c(seq(1.2,13.2,by=2),seq(1.8,13.8,by=2))),
+    boxwex=0.5, plot=F)
+  bxp(bp,ylim=c(-2,700),
+      boxfill=c("white","darkgray"),las=2,axes=F,staplewex=1,outline=F,outcex=0.5,whisklty="solid",medlty="solid",medlwd=1,
+      at=sort(c(seq(1.1,13.1,by=2),seq(1.9,13.9,by=2))),
+      boxwex=0.6)
+  
+  axis(1,at=seq(0.5,14.5,by=2),lty=1, c(0,expression(10^2),expression(10^3),expression(10^4),
+                                 expression(10^5),expression(10^6),expression(10^7),expression(10^8)) )
+  axis(2,at=seq(0,700,by=100),las=1)
+  
+  box()
+  mtext(side=2,line=3, "Number of SGA per biopsy per year")
+  mtext(side=1,line=2, "Lesion size (bp)")
+  
+  legend("topright", legend=c("Off NSAID","On NSAID","Wilcoxon p<.05"),
+         fill=c("white","darkgray",NA),
+         border=c("black","black",NA),
+         lty=c(0,0,0),lwd=c(0,0,1),pch=c(NA,NA,8),merge=T,box.col="black",cex=0.5,bg="white")
+
+
+  
+  
+  
+}
 

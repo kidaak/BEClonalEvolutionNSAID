@@ -1,0 +1,88 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath,pstricks}
+\usepackage[authoryear,round]{natbib}
+\usepackage{hyperref}
+\usepackage{Sweave}
+
+\SweaveOpts{eps=FALSE,prefix.string=figures/guide,eps=FALSE,pdf=TRUE}
+
+\textwidth=6.2in
+\textheight=8.5in
+%\parskip=.3cm
+\oddsidemargin=.1in
+\evensidemargin=.1in
+\headheight=-.3in
+
+\newcommand{\scscst}{\scriptscriptstyle}
+\newcommand{\scst}{\scriptstyle}
+
+
+\newcommand{\Rfunction}[1]{{\texttt{#1}}}
+\newcommand{\Robject}[1]{{\texttt{#1}}}
+\newcommand{\Rpackage}[1]{{\textit{#1}}}
+\newcommand{\Rmethod}[1]{{\texttt{#1}}}
+\newcommand{\Rfunarg}[1]{{\texttt{#1}}}
+\newcommand{\Rclass}[1]{{\textit{#1}}}
+
+\textwidth=6.2in
+
+\bibliographystyle{plainnat}
+
+\begin{document}
+%\setkeys{Gin}{width=0.55\textwidth}
+
+\title{``NSAIDs modulate clonal evolution in Barrett's esophagus'' \\Using \Rpackage{BEClonalEvolutionNSAID} for reproducing results}
+\author{Rumen Kostadinov}
+\maketitle
+
+\section{Figure 3}
+
+<<echo=FALSE, results=hide, eval=TRUE>>=
+options(width=70)
+@
+
+
+<<echo=TRUE, results=hide, eval=TRUE>>=
+## detach("package:BEClonalEvolutionNSAID")
+library("BEClonalEvolutionNSAID")
+@
+
+<<echo=TRUE, results=hide, eval=TRUE>>=
+con = connectDb(dbname="sbep")
+@
+
+
+<<Figure3A, fig=TRUE, include=FALSE, echo=FALSE, width=8, height=5>>=
+plotFigure3(con)
+@
+
+
+\begin{figure}[t!]
+  \centering
+  \includegraphics[width=\textwidth]{figures/guide-Figure3A.pdf}
+  \caption{\label{fig:f3a} Number of newly acquired SGA events  }
+\end{figure}
+
+<<Figure3B, fig=TRUE, include=FALSE, echo=FALSE, width=8, height=5>>=
+plotFigure3Regressions(con)
+@
+
+
+\begin{figure}[t!]
+  \centering
+  \includegraphics[width=\textwidth]{figures/guide-Figure3B.pdf}
+  \caption{\label{fig:f3b} Number of regressing SGA events  }
+\end{figure}
+
+
+\section{System information}
+
+This analysis was carried out on a linux machine with 12GB of RAM
+using the following packages:
+
+<<session>>=
+sessionInfo()
+@
+
+\end{document}
