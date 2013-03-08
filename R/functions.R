@@ -1602,8 +1602,8 @@ countEventsOnTerminalBranches = function (con){
 
   a = split(events_off[,], events_off$patient_id)
   b = split(events_on[,], events_on$patient_id)
-  global_off = NULL
-  global_on = NULL
+  tips_global_off = NULL
+  tips_global_on = NULL
   for (i in 1:13){
     off_nsaid = as.numeric(unlist(lapply(split(a[[i]],a[[i]]$child_node), function(x) nrow(x))))
     new_off_nsaid = as.numeric(unlist(lapply(split(a[[i]],a[[i]]$child_node), function(x) unique(x[,"total_events"]))))
@@ -1612,10 +1612,43 @@ countEventsOnTerminalBranches = function (con){
     print(new_off_nsaid)
     print(new_on_nsaid)
     print(wilcox.test(new_off_nsaid,new_on_nsaid,alt="greater"))
-    global_on = c(global_on,on_nsaid)
-    global_off = c(global_off,off_nsaid)
+    tips_global_on = c(tips_global_on,sum(on_nsaid))
+    tips_global_off = c(tips_global_off,sum(off_nsaid))
   }
+  tngon = tips_global_on[-c(7,12)]
+  tngoff = tips_global_off[-c(7,12)]
+  wilcox.test(tngoff,tngon,alt="greater")
+  t.test(tngoff,tngon,alt="greater")
 
+##   > tips_global_on
+##  [1]  132  171  227  164  283   85 2090   57  205  266  138  842   97
+## > tips_global_off
+##  [1]  160  227  467  163  182   91 1367  118  495  368  111  433  102
+## >   tngon = tips_global_on[-c(7,12)]
+## >   tngoff = tips_global_off[-c(7,12)]
+## >   wilcox.test(tngoff,tngon,alt="greater")
+
+## 	Wilcoxon rank sum test with continuity correction
+
+## data:  tngoff and tngon 
+## W = 69.5, p-value = 0.2883
+## alternative hypothesis: true location shift is greater than 0 
+
+## Warning message:
+## In wilcox.test.default(tngoff, tngon, alt = "greater") :
+##   cannot compute exact p-value with ties
+## >   t.test(tngoff,tngon,alt="greater")
+
+## 	Welch Two Sample t-test
+
+## data:  tngoff and tngon 
+## t = 1.2015, df = 14.65, p-value = 0.1243
+## alternative hypothesis: true difference in means is greater than 0 
+## 95 percent confidence interval:
+##  -27.63508       Inf 
+## sample estimates:
+## mean of x mean of y 
+##  225.8182  165.9091 
 
   ## Count descendants
   ## For every patient
@@ -1687,6 +1720,36 @@ countEventsOnTerminalBranches = function (con){
 
   }
 
+  ngon = global_on[-c(7,12)]
+  ngoff = global_off[-c(7,12)]
+## > ngon
+##  [1] 241.9281 351.6667 900.8976 268.2909 516.9197 201.7341 249.7470 718.6673 854.2959 312.3667 185.3254
+## > ngoff
+##  [1]  268.0719  387.3333 1379.1024  265.7091  537.0803  166.2659  263.2530  787.3327  624.7041  439.6333  148.6746
+## > wilcox.test(ngoff,ngon,alt="greater")
+
+## 	Wilcoxon rank sum test
+
+## data:  ngoff and ngon 
+## W = 62, p-value = 0.4744
+## alternative hypothesis: true location shift is greater than 0 
+
+## > t.test(ngoff,ngon,alt="greater")
+
+## 	Welch Two Sample t-test
+
+## data:  ngoff and ngon 
+## t = 0.3136, df = 18.523, p-value = 0.3787
+## alternative hypothesis: true difference in means is greater than 0 
+## 95 percent confidence interval:
+##  -191.2436       Inf 
+## sample estimates:
+## mean of x mean of y 
+##  478.8328  436.5309 
+
+  
+##                     
+## [1] 126a 294l 297b 315c 360d 388e 437f 555g 638h 652i 662m 672j 791k
 ##  > global_on
 ##  [1]  241.9281  351.6667  900.8976  268.2909  516.9197  201.7341 3718.5634  249.7470  718.6673  854.2959  312.3667 2319.1654  185.3254
 ## > global_off
