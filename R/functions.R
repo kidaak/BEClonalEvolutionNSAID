@@ -1588,3 +1588,36 @@ for(pind in 1:length(patients)){
   
 }
 
+
+
+
+
+
+countEventsOnTerminalBranches = function (con){
+    
+  events = dbGetQuery(con, paste("select * from clonal_ordering"))
+
+  events_off = events[c(grep("N",events[,"child_node"]),grep("I",events[,"child_node"]),grep("F",events[,"child_node"])),]
+  events_on = events[grep("C",events[,"child_node"]),]
+
+  a = split(events_off[,], events_off$patient_id)
+  b = split(events_on[,], events_on$patient_id)
+  global_off = NULL
+  global_on = NULL
+  for (i in 1:13){
+    off_nsaid = as.numeric(unlist(lapply(split(a[[i]],a[[i]]$child_node), function(x) nrow(x))))
+    new_off_nsaid = as.numeric(unlist(lapply(split(a[[i]],a[[i]]$child_node), function(x) unique(x[,"total_events"]))))
+    on_nsaid = as.numeric(unlist(lapply(split(b[[i]],b[[i]]$child_node), function(x) nrow(x))))
+    new_on_nsaid = as.numeric(unlist(lapply(split(b[[i]],b[[i]]$child_node), function(x) unique(x[,"total_events"]))))
+    print(new_off_nsaid)
+    print(new_on_nsaid)
+    print(wilcox.test(new_off_nsaid,new_on_nsaid,alt="greater"))
+    global_on = c(global_on,on_nsaid)
+    global_off = c(global_off,off_nsaid)
+  }
+
+
+  ## Count descendants
+  
+  
+}
