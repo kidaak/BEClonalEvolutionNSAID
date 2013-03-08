@@ -1618,6 +1618,102 @@ countEventsOnTerminalBranches = function (con){
 
 
   ## Count descendants
-  
+  ## For every patient
+  global_on = NULL
+  global_off = NULL
+  for (i in unique(events[,"patient_id"])){
+    p_events = events[events[,"patient_id"]==i,]
+    ##
+    print (c("PATIENT",i))
+    ## Holds the # of descendants that are off/on nsaids
+    node_tip_count = matrix(0,ncol=length(unique(c(p_events[,"parent_node"],p_events[,"child_node"]))),nrow=2)
+    colnames(node_tip_count) = unique(c(p_events[,"parent_node"],p_events[,"child_node"]))
+    rownames(node_tip_count) = c("OFF_NSAID","ON_NSAID")
+    
+    ## visited
+    visited = rep(FALSE,ncol(node_tip_count))
+    names(visited) = unique(c(p_events[,"parent_node"],p_events[,"child_node"]))
+    queue = unique(p_events[grep("C|N|I|F",p_events[,"child_node"]),"child_node"])
+    node_tip_count["ON_NSAID",queue[grep("C",queue)]] = 1
+    node_tip_count["OFF_NSAID",queue[grep("N|I|F",queue)]] = 1
+      ## p_events[grep("C|N|I|F",p_events[,"child_node"]),]
+    branches = unique(paste(p_events[,"parent_node"],p_events[,"child_node"]))
+    while(!is.null(queue)){      
+      ## get the first node in the queue
+      node = queue[1]
+      visited[node] = TRUE
+      print(c("Popping ",node))
+      ## add to the NSAID on/off count to its parent
+      parent_node = unique(p_events[p_events[,"child_node"]==node,"parent_node"])
+      if(node!="root"){
+        node_tip_count[,parent_node] = node_tip_count[,parent_node] + node_tip_count[,node]
+      }      
+      print(node_tip_count)
+      print(visited)
+      ## pop the node from queue
+      if(length(queue)>1){
+        queue = queue[2:length(queue)]
+      } else {
+        ## popped the last node
+        queue = NULL
+      }
+      ## add its parent to the queue, if it is not visited
+      if(node!="root"){
+        
+        if(!any(queue==parent_node) && !visited[parent_node]){
+          ##print(parent_node)
+          ## Add only if both descendants have been visited
+          if(all(visited[unique(p_events[p_events[,"parent_node"]==parent_node,"child_node"])])){
+            queue = c(queue,parent_node)
+            ##print(parent_node)
+          }
+        }
+      }
+      print(c("Queue:",queue))
+    }
+    ## For all child branches
+    ntc = subset(node_tip_count, select=-c(root))
+    OFF_count = NULL
+    ON_count = NULL
+    for(j in colnames(ntc)){
+      total_events = p_events[p_events[,"child_node"]==j,"total_events"]
+      total_events = total_events[1]
+      OFF_count = c(OFF_count,(ntc["OFF_NSAID",j]/sum(ntc[,j]))*total_events)
+      ON_count = c(ON_count,(ntc["ON_NSAID",j]/sum(ntc[,j]))*total_events)
+    }
+    
+    global_on = c(global_on,sum(ON_count))
+    global_off = c(global_off,sum(OFF_count))
+
+  }
+
+##  > global_on
+##  [1]  241.9281  351.6667  900.8976  268.2909  516.9197  201.7341 3718.5634  249.7470  718.6673  854.2959  312.3667 2319.1654  185.3254
+## > global_off
+##  [1]  268.0719  387.3333 1379.1024  265.7091  537.0803  166.2659 3448.4366  263.2530  787.3327  624.7041  439.6333 1489.8346  148.6746
+## > 
+
+## 	Wilcoxon rank sum test
+
+## data:  global_off and global_on 
+## W = 85, p-value = 0.5
+## alternative hypothesis: true location shift is greater than 0 
+
+## > t.test(global_off,global_on,alt="greater")
+
+## 	Welch Two Sample t-test
+
+## data:  global_off and global_on 
+## t = -0.1274, df = 23.574, p-value = 0.5501
+## alternative hypothesis: true difference in means is greater than 0 
+## 95 percent confidence interval:
+##  -704.5797       Inf 
+## sample estimates:
+## mean of x mean of y 
+##  785.0332  833.8129 
+
+## > global_off-global_on
+##  [1]   26.143723   35.666667  478.204762   -2.581818   20.160606  -35.468254 -270.126788   13.506061   68.665368 -229.591764  127.266667 -829.330769  -36.650794
+
   
 }
