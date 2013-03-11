@@ -1654,6 +1654,8 @@ countEventsOnTerminalBranches = function (con){
   ## For every patient
   global_on = NULL
   global_off = NULL
+  global_branch_on = NULL
+  global_branch_off = NULL
   for (i in unique(events[,"patient_id"])){
     p_events = events[events[,"patient_id"]==i,]
     ##
@@ -1675,14 +1677,35 @@ countEventsOnTerminalBranches = function (con){
       ## get the first node in the queue
       node = queue[1]
       visited[node] = TRUE
-      print(c("Popping ",node))
+      ##print(c("Popping ",node))
       ## add to the NSAID on/off count to its parent
       parent_node = unique(p_events[p_events[,"child_node"]==node,"parent_node"])
       if(node!="root"){
+        ## STANDARD
         node_tip_count[,parent_node] = node_tip_count[,parent_node] + node_tip_count[,node]
+        ## HACK
+        ## If a child node is OFF NSAID, reset ON NSAID count of internal branch to 0
+        
+        if(i %in% c(294,662)){
+          ## ON-OFF sequence
+          if(node_tip_count[2,node]>0){
+            node_tip_count[2,parent_node] = node_tip_count[2,parent_node] + node_tip_count[2,node]
+            node_tip_count[1,parent_node] = 0
+          } else {
+            node_tip_count[,parent_node] = node_tip_count[,parent_node] + node_tip_count[,node]
+          }          
+        } else {
+          ## OFF-ON sequence
+          if(node_tip_count[1,node]>0){
+            node_tip_count[1,parent_node] = node_tip_count[1,parent_node] + node_tip_count[1,node]
+            node_tip_count[2,parent_node] = 0
+          } else {
+            node_tip_count[,parent_node] = node_tip_count[,parent_node] + node_tip_count[,node]
+          }
+        }
       }      
-      print(node_tip_count)
-      print(visited)
+      ##print(node_tip_count)
+      ##print(visited)
       ## pop the node from queue
       if(length(queue)>1){
         queue = queue[2:length(queue)]
@@ -1702,19 +1725,35 @@ countEventsOnTerminalBranches = function (con){
           }
         }
       }
-      print(c("Queue:",queue))
+      ##print(c("Queue:",queue))
     }
     ## For all child branches
     ntc = subset(node_tip_count, select=-c(root))
     OFF_count = NULL
     ON_count = NULL
     for(j in colnames(ntc)){
-      total_events = p_events[p_events[,"child_node"]==j,"total_events"]
+      total_events = p_events[p_events[,"child_node"]==j,"total_events"] ##+ p_events[p_events[,"child_node"]==j,"total_reversals"]
       total_events = total_events[1]
-      OFF_count = c(OFF_count,(ntc["OFF_NSAID",j]/sum(ntc[,j]))*total_events)
-      ON_count = c(ON_count,(ntc["ON_NSAID",j]/sum(ntc[,j]))*total_events)
+      ## Simple counting
+      ## OFF_count = c(OFF_count,(ntc["OFF_NSAID",j]/sum(ntc[,j]))*total_events)
+      ## ON_count = c(ON_count,(ntc["ON_NSAID",j]/sum(ntc[,j]))*total_events)
+      ## Mary mod 03/08/2013
+      ## For ON NSAID (a/A)/[(a/A)+(b/B)]
+      ## For OFF NSAID (b/B)/[(a/A)+(b/B)]
+      A = length(grep("C",unique(p_events[,"child_node"])))
+      B = length(grep("N|I|F",unique(p_events[,"child_node"])))
+      a = ntc["ON_NSAID",j]
+      b = ntc["OFF_NSAID",j]
+      ON_count = c(ON_count,total_events*(a/A)/((a/A)+(b/B)))
+      OFF_count = c(OFF_count,total_events*(b/B)/((a/A)+(b/B)))
+      
+      ##OFF_count = c(OFF_count,(ntc["OFF_NSAID",j]/sum(ntc[,j]))*total_events)
+      ##ON_count = c(ON_count,(ntc["ON_NSAID",j]/sum(ntc[,j]))*total_events)
+      global_branch_on = c(global_branch_on,total_events*(a/A)/((a/A)+(b/B)))
+      global_branch_off = c(global_branch_off,total_events*(b/B)/((a/A)+(b/B)))
     }
-    
+    print(wilcox.test(OFF_count,ON_count,alt="greater")$p.value)
+    print(t.test(OFF_count,ON_count,alt="greater")$p.value)
     global_on = c(global_on,sum(ON_count))
     global_off = c(global_off,sum(OFF_count))
 
