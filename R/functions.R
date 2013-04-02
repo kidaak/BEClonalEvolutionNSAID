@@ -1591,64 +1591,31 @@ for(pind in 1:length(patients)){
 
 
 
+## Counting number of events on PAUP trees 
 
+countEventsOnParsimonyTreeBranches = function (con){
 
-countEventsOnTerminalBranches = function (con){
-    
+  require(RMySQL)
   events = dbGetQuery(con, paste("select * from clonal_ordering"))
 
-  events_off = events[c(grep("N",events[,"child_node"]),grep("I",events[,"child_node"]),grep("F",events[,"child_node"])),]
-  events_on = events[grep("C",events[,"child_node"]),]
+  ## events_off = events[c(grep("N",events[,"child_node"]),grep("I",events[,"child_node"]),grep("F",events[,"child_node"])),]
+  ## events_on = events[grep("C",events[,"child_node"]),]
 
-  a = split(events_off[,], events_off$patient_id)
-  b = split(events_on[,], events_on$patient_id)
-  tips_global_off = NULL
-  tips_global_on = NULL
-  for (i in 1:13){
-    off_nsaid = as.numeric(unlist(lapply(split(a[[i]],a[[i]]$child_node), function(x) nrow(x))))
-    new_off_nsaid = as.numeric(unlist(lapply(split(a[[i]],a[[i]]$child_node), function(x) unique(x[,"total_events"]))))
-    on_nsaid = as.numeric(unlist(lapply(split(b[[i]],b[[i]]$child_node), function(x) nrow(x))))
-    new_on_nsaid = as.numeric(unlist(lapply(split(b[[i]],b[[i]]$child_node), function(x) unique(x[,"total_events"]))))
-    print(new_off_nsaid)
-    print(new_on_nsaid)
-    print(wilcox.test(new_off_nsaid,new_on_nsaid,alt="greater"))
-    tips_global_on = c(tips_global_on,sum(on_nsaid))
-    tips_global_off = c(tips_global_off,sum(off_nsaid))
-  }
-  tngon = tips_global_on[-c(7,12)]
-  tngoff = tips_global_off[-c(7,12)]
-  wilcox.test(tngoff,tngon,alt="greater")
-  t.test(tngoff,tngon,alt="greater")
-
-##   > tips_global_on
-##  [1]  132  171  227  164  283   85 2090   57  205  266  138  842   97
-## > tips_global_off
-##  [1]  160  227  467  163  182   91 1367  118  495  368  111  433  102
-## >   tngon = tips_global_on[-c(7,12)]
-## >   tngoff = tips_global_off[-c(7,12)]
-## >   wilcox.test(tngoff,tngon,alt="greater")
-
-## 	Wilcoxon rank sum test with continuity correction
-
-## data:  tngoff and tngon 
-## W = 69.5, p-value = 0.2883
-## alternative hypothesis: true location shift is greater than 0 
-
-## Warning message:
-## In wilcox.test.default(tngoff, tngon, alt = "greater") :
-##   cannot compute exact p-value with ties
-## >   t.test(tngoff,tngon,alt="greater")
-
-## 	Welch Two Sample t-test
-
-## data:  tngoff and tngon 
-## t = 1.2015, df = 14.65, p-value = 0.1243
-## alternative hypothesis: true difference in means is greater than 0 
-## 95 percent confidence interval:
-##  -27.63508       Inf 
-## sample estimates:
-## mean of x mean of y 
-##  225.8182  165.9091 
+  ## a = split(events_off[,], events_off$patient_id)
+  ## b = split(events_on[,], events_on$patient_id)
+  ## tips_global_off = NULL
+  ## tips_global_on = NULL
+  ## for (i in 1:13){
+  ##   off_nsaid = as.numeric(unlist(lapply(split(a[[i]],a[[i]]$child_node), function(x) nrow(x))))
+  ##   new_off_nsaid = as.numeric(unlist(lapply(split(a[[i]],a[[i]]$child_node), function(x) unique(x[,"total_events"]))))
+  ##   on_nsaid = as.numeric(unlist(lapply(split(b[[i]],b[[i]]$child_node), function(x) nrow(x))))
+  ##   new_on_nsaid = as.numeric(unlist(lapply(split(b[[i]],b[[i]]$child_node), function(x) unique(x[,"total_events"]))))
+  ##   print(new_off_nsaid)
+  ##   print(new_on_nsaid)
+  ##   print(wilcox.test(new_off_nsaid,new_on_nsaid,alt="greater"))
+  ##   tips_global_on = c(tips_global_on,sum(on_nsaid))
+  ##   tips_global_off = c(tips_global_off,sum(off_nsaid))
+  ## }
 
   ## Count descendants
   ## For every patient
@@ -1656,12 +1623,13 @@ countEventsOnTerminalBranches = function (con){
   global_off = NULL
   global_branch_on = NULL
   global_branch_off = NULL
+  branchEventsCount = NULL
   for (i in unique(events[,"patient_id"])){
     p_events = events[events[,"patient_id"]==i,]
     ##
     print (c("PATIENT",i))
     ## Holds the # of descendants that are off/on nsaids
-    node_tip_count = matrix(0,ncol=length(unique(c(p_events[,"parent_node"],p_events[,"child_node"]))),nrow=2)
+    node_tip_count = matrix(-1,ncol=length(unique(c(p_events[,"parent_node"],p_events[,"child_node"]))),nrow=2)
     colnames(node_tip_count) = unique(c(p_events[,"parent_node"],p_events[,"child_node"]))
     rownames(node_tip_count) = c("OFF_NSAID","ON_NSAID")
     
@@ -1669,38 +1637,48 @@ countEventsOnTerminalBranches = function (con){
     visited = rep(FALSE,ncol(node_tip_count))
     names(visited) = unique(c(p_events[,"parent_node"],p_events[,"child_node"]))
     queue = unique(p_events[grep("C|N|I|F",p_events[,"child_node"]),"child_node"])
+    
     node_tip_count["ON_NSAID",queue[grep("C",queue)]] = 1
     node_tip_count["OFF_NSAID",queue[grep("N|I|F",queue)]] = 1
+    node_tip_count["ON_NSAID",queue[grep("N|I|F",queue)]] = 0
+    node_tip_count["OFF_NSAID",queue[grep("C",queue)]] = 0
+
       ## p_events[grep("C|N|I|F",p_events[,"child_node"]),]
     branches = unique(paste(p_events[,"parent_node"],p_events[,"child_node"]))
     while(!is.null(queue)){      
       ## get the first node in the queue
       node = queue[1]
       visited[node] = TRUE
-      ##print(c("Popping ",node))
       ## add to the NSAID on/off count to its parent
       parent_node = unique(p_events[p_events[,"child_node"]==node,"parent_node"])
+      ##print(c("Visiting branch ",parent_node, node))
       if(node!="root"){
         ## STANDARD
-        node_tip_count[,parent_node] = node_tip_count[,parent_node] + node_tip_count[,node]
+        ##node_tip_count[,parent_node] = node_tip_count[,parent_node] + node_tip_count[,node]
         ## HACK
         ## If a child node is OFF NSAID, reset ON NSAID count of internal branch to 0
         
         if(i %in% c(294,662)){
           ## ON-OFF sequence
           if(node_tip_count[2,node]>0){
-            node_tip_count[2,parent_node] = node_tip_count[2,parent_node] + node_tip_count[2,node]
+            node_tip_count[2,parent_node] = 1 ## node_tip_count[2,parent_node] + node_tip_count[2,node]
             node_tip_count[1,parent_node] = 0
           } else {
-            node_tip_count[,parent_node] = node_tip_count[,parent_node] + node_tip_count[,node]
+            if(node_tip_count[1,parent_node]!=0){
+              node_tip_count[2,parent_node] = 0  ##node_tip_count[,parent_node] + node_tip_count[,node]
+              node_tip_count[1,parent_node] = 1
+            }
           }          
         } else {
           ## OFF-ON sequence
           if(node_tip_count[1,node]>0){
-            node_tip_count[1,parent_node] = node_tip_count[1,parent_node] + node_tip_count[1,node]
-            node_tip_count[2,parent_node] = 0
+            node_tip_count[1,parent_node] = 1 ##node_tip_count[1,parent_node] + node_tip_count[1,node]
+            node_tip_count[2,parent_node] = 0 
           } else {
-            node_tip_count[,parent_node] = node_tip_count[,parent_node] + node_tip_count[,node]
+            if(node_tip_count[2,parent_node]!=0){
+              node_tip_count[1,parent_node] = 0   ## node_tip_count[,parent_node] + node_tip_count[,node]
+              node_tip_count[2,parent_node] = 1
+            }
           }
         }
       }      
@@ -1729,6 +1707,7 @@ countEventsOnTerminalBranches = function (con){
     }
     ## For all child branches
     ntc = subset(node_tip_count, select=-c(root))
+    ##print(ntc)
     OFF_count = NULL
     ON_count = NULL
     for(j in colnames(ntc)){
@@ -1744,120 +1723,309 @@ countEventsOnTerminalBranches = function (con){
       B = length(grep("N|I|F",unique(p_events[,"child_node"])))
       a = ntc["ON_NSAID",j]
       b = ntc["OFF_NSAID",j]
-      ON_count = c(ON_count,total_events*(a/A)/((a/A)+(b/B)))
-      OFF_count = c(OFF_count,total_events*(b/B)/((a/A)+(b/B)))
+      ##ON_count = c(ON_count,total_events*(a/A)/((a/A)+(b/B)))
+      ##OFF_count = c(OFF_count,total_events*(b/B)/((a/A)+(b/B)))
+      ##ON_count = c(ON_count,total_events*a/A)/((a/A)+(b/B)))
+      ##OFF_count = c(OFF_count,total_events*(b/B)/((a/A)+(b/B)))
       
       ##OFF_count = c(OFF_count,(ntc["OFF_NSAID",j]/sum(ntc[,j]))*total_events)
       ##ON_count = c(ON_count,(ntc["ON_NSAID",j]/sum(ntc[,j]))*total_events)
-      global_branch_on = c(global_branch_on,total_events*(a/A)/((a/A)+(b/B)))
-      global_branch_off = c(global_branch_off,total_events*(b/B)/((a/A)+(b/B)))
-    }
-    print(wilcox.test(OFF_count,ON_count,alt="greater")$p.value)
-    print(t.test(OFF_count,ON_count,alt="greater")$p.value)
-    global_on = c(global_on,sum(ON_count))
-    global_off = c(global_off,sum(OFF_count))
 
+      ## Count the # of events per branch
+      parent_node = unique(p_events[p_events[,"child_node"]==j,"parent_node"])
+      branchEventsCount = rbind(branchEventsCount,cbind(patient=as.integer(i),parentNode=parent_node, childNode=j,
+        offNSAID=as.integer(b>0)*total_events,onNSAID=as.integer(a>0)*total_events, isBranchOffNSAID=as.integer(b>0)))
+      ##global_branch_on = rbind(cbind(patient=i,c(global_branch_on,total_events*(a/A)/((a/A)+(b/B)))
+      ##global_branch_off = c(global_branch_off,total_events*(b/B)/((a/A)+(b/B)))
+    }
+    ##print(wilcox.test(OFF_count,ON_count,alt="greater")$p.value)
+    ##print(t.test(OFF_count,ON_count,alt="greater")$p.value)
+    ##global_on = c(global_on,sum(ON_count))
+    ##global_off = c(global_off,sum(OFF_count))
+  }
+  branchEventsCount = as.data.frame(branchEventsCount,stringsAsFactors=FALSE)
+  branchEventsCount[,c(1,4,5,6)] = sapply(branchEventsCount[,c(1,4,5,6)], as.numeric)
+
+  ##aggregate(branchEventsCount[,c("offNSAID","onNSAID","isBranchOffNSAID")], list(branchEventsCount$patient, bla = branchEventsCount[,"isBranchOffNSAID"]==1), mean)
+  ##aggregate(branchEventsCount[,c("offNSAID","onNSAID","isBranchOffNSAID")], list(branchEventsCount$patient, branchEventsCount[,"isBranchOffNSAID"]), sum) 
+
+ ##  library(ggplot2)
+  library(vioplot)
+##  plot(NA,xlim=c(1,14),ylim=c(1,1000))
+
+  ##p <- ggplot(, aes(factor(cyl), mpg))
+  porder =  c(126,297,315,360,388,437,555,638,652,672,791,294,662)
+  pcharorder = letters[1:13]
+  xON = list()
+  xOFF = list()
+  for(i in 1:13){
+    p = porder[i]
+    bec = branchEventsCount[branchEventsCount[,"patient"]==p,]
+    becON = bec[bec[,"isBranchOffNSAID"]==0,]
+    becOFF = bec[bec[,"isBranchOffNSAID"]==1,]
+    ## print(becOFF)
+    ## print(becON)
+    ## print(t.test(becOFF[,"offNSAID"],becON[,"onNSAID"],alt="greater")$p.value)
+    ## print(sum(becOFF[,"offNSAID"]))
+    ## print(sum(becON[,"onNSAID"]))
+    print(summary(becOFF))
+    print(summary(becON))
+    n = nrow(becOFF)
+    m = nrow(becON)
+    ##points(rep(i,n),becOFF[,"offNSAID"])
+    ##points(rep(i+0.5,m),becON[,"onNSAID"])
+    xON[[i]] = becON[,"onNSAID"]
+    xOFF[[i]] = becOFF[,"offNSAID"]
   }
 
-## [1] "PATIENT" "126"    
-## [1] 0.01585571
-## [1] 0.03294938
-## [1] "PATIENT" "294"    
-## [1] 0.991969
-## [1] 0.8922102
-## [1] "PATIENT" "297"    
-## [1] 0.008511507
-## [1] 0.02532797
-## [1] "PATIENT" "315"    
-## [1] 0.02855651
-## [1] 0.04827841
-## [1] "PATIENT" "360"    
-## [1] 0.003041122
-## [1] 0.1126885
-## [1] "PATIENT" "388"    
-## [1] 0.03571929
-## [1] 0.02728749
-## [1] "PATIENT" "437"    
-## [1] 0.009708473
-## [1] 0.06814079
-## [1] "PATIENT" "555"    
-## [1] 0.03467632
-## [1] 0.05522289
-## [1] "PATIENT" "638"    
-## [1] 0.001444916
-## [1] 0.004342644
-## [1] "PATIENT" "652"    
-## [1] 0.02023863
-## [1] 0.004979136
-## [1] "PATIENT" "662"    
-## [1] 0.894056
-## [1] 0.9650214
-## [1] "PATIENT" "672"    
-## [1] 0.0006183931
-## [1] 0.0433251
-## [1] "PATIENT" "791"    
-## [1] 0.1519429
-## [1] 0.5510002
+  tiff("figure3_apr2.tiff",width=6.83,height=3,units="in",res=300,compression="lzw",pointsize=10)
+  plot(NA,xlim=c(1,26),ylim=c(1,600),type="n",
+       xlab="Individuals",ylab="Number of SGA events",axes=F)
+  axis(side=1,line=0,at=seq(1.5,26,by=2),labels=pcharorder,tick=FALSE)  
+  axis(side=1,at=seq(0.5,26.5,by=2),labels=FALSE,tick=TRUE)
+  axis(side=2,at=c(0,200,400,600),labels=c("0","200","400",">=600"))
+  for(j in 1:13){
+    if(j%in%c(12,13)){
+      vioplot(xON[[j]],h=20,wex=length(xON[[j]])/(length(xON[[j]])+length(xOFF[[j]])),at=j*2-1,col="gray",colMed="black",pchMed="-",add=T,drawRect=F)
+      vioplot(xOFF[[j]],h=20,wex=length(xOFF[[j]])/(length(xON[[j]])+length(xOFF[[j]])),at=j*2-0.5,col="white",colMed="black",pchMed="-",add=T,drawRect=F)   
+      xOFF[[j]][xOFF[[j]]>600] = 600
+      xON[[j]][xON[[j]]>600] = 600
+      points(rep(j*2,length(xON[[j]])),xON[[j]],col="black",pch=21,bg="gray",cex=0.5,add=T)     
+      points(rep(j*2+0.3,length(xOFF[[j]])),xOFF[[j]],col="black",pch=1,cex=0.5,add=T)
 
+      medON = median(xON[[j]])
+      medOFF = median(xOFF[[j]])
+      mbarON = length(xON[[j]])/(length(xON[[j]])+length(xOFF[[j]]))/2
+      mbarOFF = length(xOFF[[j]])/(length(xON[[j]])+length(xOFF[[j]]))/2
+      
+      lines(c(j*2-1-mbarON,j*2-1+mbarON),c(medON,medON),lwd=1)      
+      lines(c(j*2-0.5-mbarOFF,j*2-0.5+mbarOFF),c(medOFF,medOFF),lwd=1)
 
-  
-  ngon = global_on[-c(7,12)]
-  ngoff = global_off[-c(7,12)]
-## > ngon
-##  [1] 241.9281 351.6667 900.8976 268.2909 516.9197 201.7341 249.7470 718.6673 854.2959 312.3667 185.3254
-## > ngoff
-##  [1]  268.0719  387.3333 1379.1024  265.7091  537.0803  166.2659  263.2530  787.3327  624.7041  439.6333  148.6746
-## > wilcox.test(ngoff,ngon,alt="greater")
-
-## 	Wilcoxon rank sum test
-
-## data:  ngoff and ngon 
-## W = 62, p-value = 0.4744
-## alternative hypothesis: true location shift is greater than 0 
-
-## > t.test(ngoff,ngon,alt="greater")
-
-## 	Welch Two Sample t-test
-
-## data:  ngoff and ngon 
-## t = 0.3136, df = 18.523, p-value = 0.3787
-## alternative hypothesis: true difference in means is greater than 0 
-## 95 percent confidence interval:
-##  -191.2436       Inf 
-## sample estimates:
-## mean of x mean of y 
-##  478.8328  436.5309 
-
-  
-##                     
-## [1] 126a 294l 297b 315c 360d 388e 437f 555g 638h 652i 662m 672j 791k
-##  > global_on
-##  [1]  241.9281  351.6667  900.8976  268.2909  516.9197  201.7341 3718.5634  249.7470  718.6673  854.2959  312.3667 2319.1654  185.3254
-## > global_off
-##  [1]  268.0719  387.3333 1379.1024  265.7091  537.0803  166.2659 3448.4366  263.2530  787.3327  624.7041  439.6333 1489.8346  148.6746
-## > 
-
-## 	Wilcoxon rank sum test
-
-## data:  global_off and global_on 
-## W = 85, p-value = 0.5
-## alternative hypothesis: true location shift is greater than 0 
-
-## > t.test(global_off,global_on,alt="greater")
-
-## 	Welch Two Sample t-test
-
-## data:  global_off and global_on 
-## t = -0.1274, df = 23.574, p-value = 0.5501
-## alternative hypothesis: true difference in means is greater than 0 
-## 95 percent confidence interval:
-##  -704.5797       Inf 
-## sample estimates:
-## mean of x mean of y 
-##  785.0332  833.8129 
-
-## > global_off-global_on
-##  [1]   26.143723   35.666667  478.204762   -2.581818   20.160606  -35.468254 -270.126788   13.506061   68.665368 -229.591764  127.266667 -829.330769  -36.650794
+    } else {
+      vioplot(xOFF[[j]],h=20,wex=length(xOFF[[j]])/(length(xON[[j]])+length(xOFF[[j]])),at=j*2-1,col="white",colMed="black",pchMed="-",add=T,drawRect=F)   
+      vioplot(xON[[j]],h=20,wex=length(xON[[j]])/(length(xON[[j]])+length(xOFF[[j]])),at=j*2-0.5,col="gray",colMed="black",pchMed="-",add=T,drawRect=F)
+      ## outliers
+      xOFF[[j]][xOFF[[j]]>600] = 600
+      xON[[j]][xON[[j]]>600] = 600
+      points(rep(j*2,length(xOFF[[j]])),xOFF[[j]],col="black",pch=1,cex=0.5,add=T)
+      points(rep(j*2+0.3,length(xON[[j]])),xON[[j]],col="black",pch=21,bg="gray",cex=0.5,add=T)     
+      medON = median(xON[[j]])
+      medOFF = median(xOFF[[j]])
+      mbarON = length(xON[[j]])/(length(xON[[j]])+length(xOFF[[j]]))/2
+      mbarOFF = length(xOFF[[j]])/(length(xON[[j]])+length(xOFF[[j]]))/2
+      lines(c(j*2-1-mbarOFF,j*2-1+mbarOFF),c(medOFF,medOFF),lwd=1)
+      lines(c(j*2-0.5-mbarON,j*2-0.5+mbarON),c(medON,medON),lwd=1)      
+    }
+  }
+  legend("topright", legend=c("Off NSAID","On NSAID"),
+         fill=c("white","darkgray"),
+         border=c("black","black"),
+         lty=c(0,0),lwd=c(0,0),pch=c(NA,NA),cex=0.8,bty="n",bg="white")
+  mtext(side=2,line=2,"on each phylogeny branch")
+  dev.off()
 
   
 }
+
+
+## Dropout calculations
+## Problem statement:
+
+## For each period (on or off NSAIDs) we observed some number of
+## lesions in non-terminal endoscopies, and then for each lesion,
+## we did or did not observe it at the terminal endoscopy (of
+## that period).  However the number of biopsies at the terminal
+## endoscopy varies, so how to do a test?  Obviously the more
+## biopsies, the more lesions we expect to observe.
+
+## Let's assume that biopsies are independent and that there is
+## a probability P of observing a lesion in a single terminal
+## biopsy.  This P is specific to each patient and period.  We
+## want to test if the P for on and the P for off differ across
+## our set of patients.
+
+## The chance that a lesion will NOT be seen at the terminal
+## endoscopy is (1-P)^B where B is the number of terminal biopsies.
+## Reasoning:  the chance that a lesion would be seen in one
+## biopsy is P by definition.  The chance of not seeing it in one
+## biopsy is therefore 1-P.  If biopsies are independent, the
+## chance of not seeing it in B biopsies is (1-P)^B.
+
+## You can take the percent of lesions which regress and calculate
+## P for each patient/time period combo, then do a Wilcoxon
+## to see if they differ.
+
+## Example:  in one patient/period combo we saw 500 lesions
+## prior to terminal endoscopy.  We saw only 400 of them in
+## terminal endoscopy which had 3 biopsies.  Call the
+## percentage lost L, then:
+
+## L = (1-P)^B
+## 0.2 = (1-P)^3
+## 0.588 = 1-P
+## P = 0.41
+
+## Each individual had a period off NSAIDs and a period on NSAIDs.
+## Each such period had several endoscopies, including a terminal (last)
+## endoscopy for that period.  For each period we counted the total
+## number of distinct lesions in biopsies from non-terminal
+## endoscopies, then asked what proportion of them were not observed
+## in the terminal endoscopy.  To correct for varying number of biopsies at the terminal endoscopy, we estimated the probability P of detection
+## of a lesion in a single biopsy, so that failure to detect a lesion in b biopsies would have a probability of (1-P)^b.  P was estimated for each individual and period, and a Wilcoxon test was used to see if P varied between on-NSAIDs and off-NSAIDs periods.  Note that
+## this test assumes independence of biopsies, but violation of
+## this assumption should affect on- and off-NSAIDs data similarly.
+
+dropoutAnalysis = function(con){
+
+  ## Get patient_id and the reference sample id
+  patients = t(dbGetQuery(con, "select distinct(patient_id) from acs_paired_samples"))
+
+  all.period.0 = NULL
+  all.period.1 = NULL
+  all.period.2 = NULL
+  period.0.scale = NULL
+  period.1.scale = NULL
+  period.2.scale = NULL
+  period.0.all.cnaloh = NULL
+  period.1.all.cnaloh = NULL
+  period.2.all.cnaloh = NULL
+  nc.users = c(1,3,4,5,6,7,8,9,10,12,13)
+  cf.users = c(2,11)
+  
+  cnaloh.distrib.all = NULL
+  cnaloh.distrib.new = NULL
+  cnaloh.distrib.extinct = NULL
+  cnaloh.distrib.final = NULL
+  
+  patient.on.nsaids.time = NULL
+  patient.off.nsaids.time = NULL
+  
+
+  ## Compute the average size of an alteration
+  for(pind in 1:length(patients)){
+    patient_id = patients[pind]
+    print(paste("Patient",patient_id))
+    samples = dbGetQuery(con, paste("select * from acs_paired_samples where patient_id=",patient_id,
+      "order by endoscopy_date, biopsy_level"))
+    
+    ## Calculate time
+    if(pind %in% nc.users){  
+      patient.on.nsaids.time = c(patient.on.nsaids.time,unique(samples[,"second_sampling_period_duration"]))
+      patient.off.nsaids.time = c(patient.off.nsaids.time,unique(samples[,"first_sampling_period_duration"]))
+    } else {
+      patient.on.nsaids.time = c(patient.on.nsaids.time,unique(samples[,"first_sampling_period_duration"]))
+      patient.off.nsaids.time = c(patient.off.nsaids.time,unique(samples[,"second_sampling_period_duration"]))
+    }
+    
+    all.features = dbGetQuery(con, paste("select * from compressed_patient_feature_states",
+    "where patient_id=",patient_id," order by start_snp_id, sample_id"))
+  ## Re-order features by endoscopy date, biopsy level
+    samples.order = rep(order(samples[,"sample_id"]),nrow(all.features)/nrow(samples))
+    all.features.order.index = order(all.features[,"start_snp_id"],samples.order)
+    all.features = all.features[all.features.order.index,]
+    
+    feat.states = matrix(all.features[,"state"],ncol=nrow(samples),byrow=T)
+    feat.phased.states = matrix(all.features[,"state_phased"],ncol=nrow(samples),byrow=T)
+    feat.binary.states = matrix(all.features[,"state"],ncol=nrow(samples),byrow=T)
+    feat.binary.states[feat.binary.states!="AB"] = 1
+    feat.binary.states[feat.binary.states!=1] = 0
+    feat.size = matrix(all.features[,"stop_position"]-all.features[,"start_position"]+1,ncol=nrow(samples),byrow=T)
+    feat.chr = matrix(all.features[,"chromosome"],ncol=nrow(samples),byrow=T)
+    feat.start = matrix(all.features[,"start_position"],ncol=nrow(samples),byrow=T)
+    feat.stop = matrix(all.features[,"stop_position"],ncol=nrow(samples),byrow=T)
+    
+  ## Sort according to the binary pattern
+  patterns = apply(feat.binary.states,1,function(x) paste(x,collapse=""))
+  order.index = order(patterns)
+
+  sgas.summary = NULL
+  sgas.summary = cbind(rep("",ncol(samples)),rep("",ncol(samples)),rep("",ncol(samples)),rep("",ncol(samples))) 
+  for(i in 1:nrow(samples)){
+    sgas.summary = cbind(sgas.summary,t(samples[i,]))
+  }
+  sgas.summary[1:nrow(sgas.summary),4] = names(samples)
+  sgas.summary = rbind(sgas.summary,rep("",ncol(sgas.summary)))
+  sgas.summary[nrow(sgas.summary),c(1:4)] = c("chromosome","start","stop","size")
+
+  feat.binary.states = feat.binary.states[order.index,]
+  feat.states = feat.states[order.index,]
+  feat.phased.states = feat.phased.states[order.index,]
+  feat.chr = feat.chr[order.index,]
+  feat.start = feat.start[order.index,]
+  feat.stop = feat.stop[order.index,]
+  feat.size = feat.size[order.index,]
+
+  colnames(sgas.summary) = c(1:ncol(sgas.summary))
+  colnames(feat.binary.states) = c(1:ncol(feat.binary.states))
+  colnames(feat.states) = c(1:ncol(feat.states))
+  colnames(feat.phased.states) = c(1:ncol(feat.phased.states))
+  colnames(feat.chr) = c(1:ncol(feat.chr))
+  colnames(feat.start) = c(1:ncol(feat.start))
+  colnames(feat.stop) = c(1:ncol(feat.stop))
+  colnames(feat.size) = c(1:ncol(feat.size))
+  
+  binary.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.binary.states))
+  unphased.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.states))
+  phased.sga = rbind(sgas.summary,cbind(feat.chr[,1],feat.start[,1],feat.stop[,1],feat.size[,1],feat.phased.states))
+
+  feat.binary.states = data.frame(as.numeric(feat.chr[,1]),feat.start[,1],feat.stop[,1],feat.binary.states)
+
+  ## Two periods, one before NSAID transition point and one after it
+    samples.period.1 = which(samples[,"endo_age_from_baseline"]<samples[,"nsaids_transition_age_from_baseline"])
+    samples.period.2 = which(samples[,"endo_age_from_baseline"]>samples[,"nsaids_transition_age_from_baseline"])
+
+    samples.period.1.terminal.endo = which(samples[,"endo_age_from_baseline"]<samples[,"nsaids_transition_age_from_baseline"] &
+      samples[,"endo_age_from_baseline"]==samples[max(samples.period.1),"endo_age_from_baseline"])
+    samples.period.1.wo.terminal.endo = samples.period.1[!samples.period.1%in%samples.period.1.terminal.endo]
+    samples.period.2.terminal.endo = which(samples[,"endo_age_from_baseline"]>samples[,"nsaids_transition_age_from_baseline"] &
+      samples[,"endo_age_from_baseline"]==samples[max(samples.period.2),"endo_age_from_baseline"])
+    samples.period.2.wo.terminal.endo = samples.period.2[!samples.period.2%in%samples.period.2.terminal.endo]
+
+    
+    ## Get SGAs
+    feats.period.1.terminal.endo = feat.binary.states[,c(1:3,samples.period.1.terminal.endo+3)]
+    feats.period.1.wo.terminal.endo = feat.binary.states[,c(1:3,samples.period.1.wo.terminal.endo+3)]
+    feats.period.2.terminal.endo = feat.binary.states[,c(1:3,samples.period.2.terminal.endo+3)]
+    feats.period.2.wo.terminal.endo = feat.binary.states[,c(1:3,samples.period.2.wo.terminal.endo+3)]
+
+    ## Get all of the lesions in period
+    n1 = ncol(feats.period.1.wo.terminal.endo)-3
+    n2 = ncol(feats.period.2.wo.terminal.endo)-3
+    n3 = ncol(feats.period.1.terminal.endo)-3
+    n4 = ncol(feats.period.2.terminal.endo)-3
+    if(n1>1){
+      period.1.all.SGA = apply(feats.period.1.wo.terminal.endo[,c(4:ncol(feats.period.1.wo.terminal.endo))],1,function(x) any(as.logical(as.numeric(as.character(x)))))
+    } else {
+      period.1.all.SGA = as.logical(as.numeric(as.character(feats.period.1.wo.terminal.endo[,c(4:ncol(feats.period.1.wo.terminal.endo))])))
+    }
+    if(n2>1){
+      period.2.all.SGA = apply(feats.period.2.wo.terminal.endo[,c(4:ncol(feats.period.2.wo.terminal.endo))],1,function(x) any(as.logical(as.numeric(as.character(x)))))
+    } else {
+      period.2.all.SGA = as.logical(as.numeric(as.character(feats.period.2.wo.terminal.endo[,c(4:ncol(feats.period.2.wo.terminal.endo))])))
+    }
+    if(n3>1){
+      period.1.tendo.SGA = apply(feats.period.1.terminal.endo[,c(4:ncol(feats.period.1.terminal.endo))],1,function(x) any(as.logical(as.numeric(as.character(x)))))
+    } else {
+      period.1.tendo.SGA = as.logical(as.numeric(as.character(feats.period.1.terminal.endo[,c(4:ncol(feats.period.1.terminal.endo))])))
+    }
+    if(n4>1){
+      period.2.tendo.SGA = apply(feats.period.2.terminal.endo[,c(4:ncol(feats.period.2.terminal.endo))],1,function(x) any(as.logical(as.numeric(as.character(x)))))
+    } else {
+      period.2.tendo.SGA = as.logical(as.numeric(as.character(feats.period.2.terminal.endo[,c(4:ncol(feats.period.2.terminal.endo))])))
+    }
+
+    loss.1 = sum(period.1.all.SGA==TRUE & period.1.tendo.SGA==FALSE)/sum(period.1.all.SGA==TRUE)
+    prob.1 = 1-loss.1^(1/length(samples.period.1.terminal.endo))
+    loss.2 = sum(period.2.all.SGA==TRUE & period.2.tendo.SGA==FALSE)/sum(period.2.all.SGA==TRUE)
+    prob.2 = 1-loss.2^(1/length(samples.period.2.terminal.endo))
+    
+    print(c(prob.1,prob.2))
+
+  }  
+  
+}
+
+
+
+
+
