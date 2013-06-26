@@ -1,7 +1,8 @@
  R package for analyzing copy number changes and loss of heterozygosity
  from SNP data and for analyzing clonal evolution patterns
  
- Please cite:
+ Reference:
+ 
  Kostadinov RL, Kuhner MK, Li X, Sanchez CA, Galipeau PC, et al. (2013) NSAIDs Modulate Clonal Evolution in Barrett's Esophagus. PLoS Genet 9(6): e1003553. doi:10.1371/journal.pgen.1003553
 
  Copyright (C) 2013  Rumen Kostadinov                                                                                                                              
