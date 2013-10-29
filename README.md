@@ -1,3 +1,8 @@
+ Please contact the author, Rumen Kostadinov, for questions regarding 
+ source code.
+ 
+ rkostadi at jhsph edu
+ 
  R package for analyzing copy number changes and loss of heterozygosity
  from SNP data and for analyzing clonal evolution patterns
  
