@@ -1,7 +1,8 @@
  Please contact the author, Rumen Kostadinov, for questions regarding 
  source code.
  
- rkostadi at jhsph edu
+ rkostadi at jhsph dot edu
+ rkostadi at gmail dot com
  
  R package for analyzing copy number changes and loss of heterozygosity
  from SNP data and for analyzing clonal evolution patterns
@@ -10,7 +11,7 @@
  
  Kostadinov RL, Kuhner MK, Li X, Sanchez CA, Galipeau PC, et al. (2013) NSAIDs Modulate Clonal Evolution in Barrett's Esophagus. PLoS Genet 9(6): e1003553. doi:10.1371/journal.pgen.1003553
 
- Copyright (C) 2013  Rumen Kostadinov                                                                                                                              
+Copyleft (C) 2013  Rumen Kostadinov                                                                                                                              
                                                                                                                                                                     
  This program is free software: you can redistribute it and/or modify                                                                                               
  it under the terms of the GNU General Public License as published by                                                                                               
