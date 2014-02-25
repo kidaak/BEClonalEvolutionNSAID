@@ -2,6 +2,7 @@
  source code.
  
  rkostadi at jhsph dot edu
+ 
  rkostadi at gmail dot com
  
  R package for analyzing copy number changes and loss of heterozygosity
